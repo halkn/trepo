@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // Discover lists the repositories below root, sorted by their location.
@@ -87,4 +88,28 @@ func subdirs(dir string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// FromRoot describes the repository checked out at root.
+//
+// When root sits below the trepo root its location carries the host and owner,
+// which is how a repository found by path gets the same identity as one found
+// by discovery. Anywhere else only the directory name is known, and claiming
+// more than that would put a made-up host in the output.
+func FromRoot(root, trepoRoot string) Repo {
+	root = filepath.Clean(root)
+	r := Repo{Name: filepath.Base(root), Root: root}
+
+	rel, err := filepath.Rel(filepath.Clean(trepoRoot), root)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return r
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if len(parts) < 3 {
+		return r
+	}
+	r.Host = parts[0]
+	r.Owner = strings.Join(parts[1:len(parts)-1], "/")
+	r.Name = parts[len(parts)-1]
+	return r
 }
