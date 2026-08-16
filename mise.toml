@@ -1,0 +1,14 @@
+[tools]
+go = "1.26.6"
+
+[tasks.test]
+description = "run the test suite"
+run = "go test ./..."
+
+[tasks.lint]
+description = "vet and format check"
+run = ["go vet ./...", "test -z \"$(gofmt -l .)\" || { gofmt -l .; exit 1; }"]
+
+[tasks.build]
+description = "build the trepo binary"
+run = "go build -o trepo ./cmd/trepo"
