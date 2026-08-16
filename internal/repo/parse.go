@@ -19,8 +19,15 @@ type Repo struct {
 }
 
 // Slug is the repository without its host, which is what identifies it in
-// output: the host rarely tells two checkouts apart.
-func (r Repo) Slug() string { return r.Owner + "/" + r.Name }
+// output: the host rarely tells two checkouts apart. A repository found
+// outside the trepo root has no known owner, and is named by itself rather
+// than by a slug with nothing in front of the slash.
+func (r Repo) Slug() string {
+	if r.Owner == "" {
+		return r.Name
+	}
+	return r.Owner + "/" + r.Name
+}
 
 // RelPath is the location of the repository below the trepo root.
 func (r Repo) RelPath() string { return path.Join(r.Host, r.Owner, r.Name) }

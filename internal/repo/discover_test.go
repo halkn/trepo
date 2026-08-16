@@ -86,3 +86,53 @@ func TestDiscoverOnMissingRootIsEmpty(t *testing.T) {
 		t.Errorf("Discover() = %v, want empty", slugs(got))
 	}
 }
+
+func TestFromRootBelowTheTrepoRoot(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "github.com", "halkn", "trepo")
+
+	got := repo.FromRoot(dir, root)
+	if got.Host != "github.com" || got.Owner != "halkn" || got.Name != "trepo" {
+		t.Errorf("FromRoot() = %+v", got)
+	}
+}
+
+func TestFromRootWithAzureDepth(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "dev.azure.com", "org", "proj", "service")
+
+	got := repo.FromRoot(dir, root)
+	if got.Owner != "org/proj" || got.Name != "service" {
+		t.Errorf("FromRoot() = %+v", got)
+	}
+}
+
+// The paths git reports have their symlinks resolved while a configured root
+// usually does not, so the two must be brought to the same spelling before
+// they are compared - otherwise a repository inside the root looks outside it
+// and loses its host and owner.
+func TestFromRootResolvesSymlinks(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	dir := filepath.Join(real, "github.com", "halkn", "trepo")
+
+	got := repo.FromRoot(dir, link)
+	if got.Owner != "halkn" || got.Name != "trepo" {
+		t.Errorf("FromRoot() = %+v, want the owner recovered through the symlink", got)
+	}
+}
+
+// Outside the root only the directory name is known, and a slug must not
+// pretend there is an owner in front of it.
+func TestFromRootOutsideTheTrepoRoot(t *testing.T) {
+	got := repo.FromRoot(filepath.Join(t.TempDir(), "loose"), t.TempDir())
+	if got.Name != "loose" || got.Owner != "" {
+		t.Errorf("FromRoot() = %+v", got)
+	}
+	if got.Slug() != "loose" {
+		t.Errorf("Slug() = %q, want %q", got.Slug(), "loose")
+	}
+}

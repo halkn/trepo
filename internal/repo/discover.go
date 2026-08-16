@@ -61,6 +61,18 @@ func Discover(root string) ([]Repo, error) {
 	return found, nil
 }
 
+// resolveSymlinks follows what exists of a path, leaving the rest as given.
+func resolveSymlinks(p string) string {
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real
+	}
+	dir, leaf := filepath.Split(filepath.Clean(p))
+	if dir == "" || filepath.Clean(dir) == filepath.Clean(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Join(resolveSymlinks(filepath.Clean(dir)), leaf)
+}
+
 func isRepo(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, ".git"))
 	return err == nil
@@ -100,7 +112,9 @@ func FromRoot(root, trepoRoot string) Repo {
 	root = filepath.Clean(root)
 	r := Repo{Name: filepath.Base(root), Root: root}
 
-	rel, err := filepath.Rel(filepath.Clean(trepoRoot), root)
+	// git reports paths with their symlinks resolved and a configured root
+	// usually keeps them, so the two are only comparable once both are.
+	rel, err := filepath.Rel(resolveSymlinks(trepoRoot), resolveSymlinks(root))
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return r
 	}
