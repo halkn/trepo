@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/halkn/trepo/internal/cli"
 	"github.com/halkn/trepo/internal/git"
 	"github.com/halkn/trepo/internal/gittest"
+	"github.com/halkn/trepo/internal/picker"
 )
 
 // world is a trepo installation with its own roots and its own git
@@ -353,6 +355,41 @@ func TestRemoveNeverTargetsTheMainCheckout(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Errorf("main checkout is gone: %v", err)
+	}
+}
+
+// Without a picker, an ambiguous query cannot be resolved. Reporting that as a
+// cancellation would tell a wrapper the user made a choice, and as no-match
+// that nothing exists, when in fact several things do.
+func TestPathWithSeveralMatchesAndNoPickerListsThemAndFails(t *testing.T) {
+	if picker.Available() {
+		// A PATH with git on it but no fzf, which is what a machine that has
+		// not installed fzf looks like.
+		gitPath, err := exec.LookPath("git")
+		if err != nil {
+			t.Skip("git is not on PATH")
+		}
+		bin := t.TempDir()
+		if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		t.Setenv("PATH", bin)
+	}
+	w := newWorld(t)
+	w.addRepo("github.com", "halkn", "alpha")
+	w.addRepo("github.com", "halkn", "alpine")
+
+	code, stdout, stderr := w.run("path", "alp")
+	if code != cli.ExitError {
+		t.Errorf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	for _, want := range []string{"alpha", "alpine", "fzf"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr does not mention %q:\n%s", want, stderr)
+		}
 	}
 }
 

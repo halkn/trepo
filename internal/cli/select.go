@@ -69,7 +69,7 @@ func (a *app) choose(cs []checkout.Checkout, multi bool, prompt string) ([]check
 		for _, c := range cs {
 			fmt.Fprintln(a.stderr, "  "+strings.Join(row(c), "  "))
 		}
-		return nil, picker.ErrCancelled
+		return nil, picker.ErrUnavailable
 	}
 
 	rows := make([]picker.Row, 0, len(cs))

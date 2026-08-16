@@ -289,7 +289,12 @@ func (a *app) selectionError(err error) int {
 	case errors.Is(err, errNoMatch):
 		fmt.Fprintln(a.stderr, "trepo: no matching checkout")
 		return ExitNoMatch
-	case errors.Is(err, picker.ErrCancelled), errors.Is(err, picker.ErrUnavailable):
+	case errors.Is(err, picker.ErrUnavailable):
+		// Several candidates and no way to ask about them. That is neither an
+		// empty result nor a decision the user made, so it must not be
+		// reported as either; the candidates are already on stderr.
+		return ExitError
+	case errors.Is(err, picker.ErrCancelled):
 		return ExitCancelled
 	default:
 		return fail(a.stderr, err)
