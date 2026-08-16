@@ -34,6 +34,15 @@ func New(t *testing.T) *Repo {
 	return r
 }
 
+// NewEmpty creates a repository that has no commit yet, which is the state
+// between `git init` and the first commit.
+func NewEmpty(t *testing.T) *Repo {
+	t.Helper()
+	r := newRepo(t)
+	r.Git("init", "--initial-branch=main")
+	return r
+}
+
 // NewBare creates a bare repository, which has no working tree of its own.
 func NewBare(t *testing.T) *Repo {
 	t.Helper()
