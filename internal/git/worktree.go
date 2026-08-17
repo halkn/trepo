@@ -92,3 +92,21 @@ func ParseWorktreeList(out []byte) ([]Worktree, error) {
 	}
 	return list, nil
 }
+
+// RepoRoot reports the main checkout of the repository that dir belongs to.
+//
+// It reads the first worktree entry rather than taking the parent of
+// --git-common-dir. That shortcut holds only for the ordinary layout: for a
+// bare repository the git dir is the repository, and for a clone made with
+// --separate-git-dir or for a submodule it sits somewhere unrelated, so the
+// parent points at a directory that is not a checkout at all.
+func RepoRoot(r Runner, dir string) (string, error) {
+	worktrees, err := ListWorktrees(r, dir)
+	if err != nil {
+		return "", err
+	}
+	if len(worktrees) == 0 {
+		return "", fmt.Errorf("no worktree found for %s", dir)
+	}
+	return worktrees[0].Path, nil
+}

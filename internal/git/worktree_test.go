@@ -153,3 +153,53 @@ func TestListWorktreesAgainstRealGit(t *testing.T) {
 		t.Errorf("linked worktree = %+v", got[1])
 	}
 }
+
+func TestRepoRootOfALinkedWorktree(t *testing.T) {
+	fixture := gittest.New(t)
+	wt := filepath.Join(filepath.Dir(fixture.Dir), "wt-feat")
+	fixture.Git("worktree", "add", "-b", "feat/x", wt)
+
+	got, err := git.RepoRoot(git.Exec{Env: fixture.Env()}, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameDir(t, got, fixture.Dir) {
+		t.Errorf("RepoRoot() = %q, want %q", got, fixture.Dir)
+	}
+}
+
+// The git dir of a bare repository is the repository, so taking its parent
+// lands one directory too high - somewhere unrelated that git then reports is
+// not a repository at all.
+func TestRepoRootOfABareRepository(t *testing.T) {
+	fixture := gittest.NewBare(t)
+
+	got, err := git.RepoRoot(git.Exec{Env: fixture.Env()}, fixture.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameDir(t, got, fixture.Dir) {
+		t.Errorf("RepoRoot() = %q, want the repository itself at %q", got, fixture.Dir)
+	}
+}
+
+func TestRepoRootOutsideARepository(t *testing.T) {
+	fixture := gittest.New(t)
+
+	if _, err := git.RepoRoot(git.Exec{Env: fixture.Env()}, t.TempDir()); err == nil {
+		t.Error("RepoRoot() succeeded outside a repository")
+	}
+}
+
+func sameDir(t *testing.T, a, b string) bool {
+	t.Helper()
+	ra, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		ra = a
+	}
+	rb, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		rb = b
+	}
+	return ra == rb
+}
