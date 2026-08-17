@@ -18,6 +18,9 @@ var ErrCancelled = errors.New("cancelled")
 // ErrUnavailable is returned when fzf is not installed.
 var ErrUnavailable = errors.New("fzf is not installed")
 
+// ErrNoMatch is returned when the query typed in the picker matched nothing.
+var ErrNoMatch = errors.New("no match")
+
 // Row is one choice: Display is what the user reads, Key is what the caller
 // gets back.
 type Row struct {
@@ -82,9 +85,13 @@ func (p Picker) Pick(rows []Row) ([]string, error) {
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			// 1 is "no match", 130 is an interrupt; both mean nothing was
-			// chosen, which is an answer rather than a failure.
-			if code := exitErr.ExitCode(); code == 1 || code == 130 {
+			// These are answers rather than failures, and they are different
+			// answers: a query that matched nothing is not the same event as
+			// the user pressing escape, and callers branch on which it was.
+			switch exitErr.ExitCode() {
+			case 1:
+				return nil, ErrNoMatch
+			case 130:
 				return nil, ErrCancelled
 			}
 		}

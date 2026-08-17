@@ -17,9 +17,9 @@ import (
 
 // get clones a repository into the place its URL implies.
 func (a *app) get(args []string) int {
-	flags, rest := parseFlags(args, nil)
-	if len(flags) > 0 {
-		return fail(a.stderr, fmt.Errorf("get takes no options"))
+	_, rest, err := parseFlags(args, spec{})
+	if err != nil {
+		return fail(a.stderr, err)
 	}
 	if len(rest) != 1 {
 		return fail(a.stderr, errors.New("usage: trepo get <owner/repo|url>"))
@@ -54,7 +54,12 @@ func (a *app) get(args []string) int {
 // list prints checkouts without ever asking a question, which is what makes it
 // usable as a data source for other tools.
 func (a *app) list(args []string) int {
-	flags, query := parseFlags(args, map[string]bool{})
+	flags, query, err := parseFlags(args, spec{
+		"json": false, "repos": false, "worktrees": false, "here": false,
+	})
+	if err != nil {
+		return fail(a.stderr, err)
+	}
 	asJSON := flags["json"] == "true"
 	onlyRepos := flags["repos"] == "true"
 	onlyWorktrees := flags["worktrees"] == "true"
@@ -91,7 +96,10 @@ func (a *app) list(args []string) int {
 
 // path answers with one location and nothing else.
 func (a *app) path(args []string) int {
-	flags, query := parseFlags(args, map[string]bool{})
+	flags, query, err := parseFlags(args, spec{"repos": false})
+	if err != nil {
+		return fail(a.stderr, err)
+	}
 
 	cs, err := a.checkouts()
 	if err != nil {
@@ -118,7 +126,10 @@ func (a *app) path(args []string) int {
 
 // add creates a worktree and prints where it is.
 func (a *app) add(args []string) int {
-	flags, rest := parseFlags(args, map[string]bool{"repo": true, "from": true})
+	flags, rest, err := parseFlags(args, spec{"repo": true, "from": true})
+	if err != nil {
+		return fail(a.stderr, err)
+	}
 	if len(rest) != 1 {
 		return fail(a.stderr, errors.New("usage: trepo add <branch> [--repo <query>] [--from <ref>]"))
 	}
@@ -144,7 +155,10 @@ func (a *app) add(args []string) int {
 
 // remove deletes worktrees, asking before anything that cannot be undone.
 func (a *app) remove(args []string) int {
-	flags, query := parseFlags(args, map[string]bool{})
+	flags, query, err := parseFlags(args, spec{"force": false, "dry-run": false})
+	if err != nil {
+		return fail(a.stderr, err)
+	}
 
 	all, err := a.checkouts()
 	if err != nil {
@@ -167,18 +181,19 @@ func (a *app) remove(args []string) int {
 	}
 
 	rm := checkout.Remover{
-		Git:     a.opts.Git,
-		Force:   flags["force"] == "true",
-		DryRun:  flags["dry-run"] == "true",
-		Confirm: a.confirmer(),
+		Git:    a.opts.Git,
+		Force:  flags["force"] == "true",
+		DryRun: flags["dry-run"] == "true",
+	}
+	// A rehearsal asks nothing, because it does nothing there is anything to
+	// agree to.
+	if !rm.DryRun {
+		rm.Confirm = a.confirmer()
 	}
 
 	status := ExitOK
 	for _, c := range chosen {
 		base := checkout.ResolveBase(a.opts.Git, c.Repo.Root)
-		if rm.DryRun {
-			fmt.Fprintf(a.stderr, "trepo: would remove %s\n", c.Path)
-		}
 		if err := rm.Remove(c, base); err != nil {
 			if errors.Is(err, checkout.ErrSkipped) {
 				fmt.Fprintf(a.stderr, "trepo: skipped %s\n", c.Path)
@@ -186,6 +201,12 @@ func (a *app) remove(args []string) int {
 			}
 			fail(a.stderr, err)
 			status = ExitError
+			continue
+		}
+		// Reported only once the guards have agreed, so a rehearsal never
+		// announces a removal that would in fact be refused.
+		if rm.DryRun {
+			fmt.Fprintf(a.stderr, "trepo: would remove %s\n", c.Path)
 		}
 	}
 	return status
@@ -205,11 +226,10 @@ func (a *app) status(args []string) int {
 		return ExitOK
 	}
 
-	common, err := git.Output(a.opts.Git, path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	root, err := git.RepoRoot(a.opts.Git, path)
 	if err != nil {
 		return fail(a.stderr, fmt.Errorf("%s is not inside a git repository", path))
 	}
-	root := filepath.Dir(strings.TrimSuffix(common, "/"))
 
 	target := repo.FromRoot(root, a.cfg.Root)
 	cs, err := (checkout.Finder{Git: a.opts.Git, Cwd: a.opts.Cwd}).Repo(target)
@@ -246,14 +266,12 @@ func (a *app) status(args []string) int {
 // target would create worktrees somewhere the user never looked.
 func (a *app) targetRepo(query string) (repo.Repo, int) {
 	if query == "" {
-		root, err := git.Output(a.opts.Git, a.opts.Cwd,
-			"rev-parse", "--path-format=absolute", "--git-common-dir")
+		root, err := git.RepoRoot(a.opts.Git, a.opts.Cwd)
 		if err != nil {
 			return repo.Repo{}, fail(a.stderr,
 				errors.New("not inside a repository; name one with --repo <query>"))
 		}
-		dir := filepath.Dir(strings.TrimSuffix(root, "/"))
-		return repo.FromRoot(dir, a.cfg.Root), ExitOK
+		return repo.FromRoot(root, a.cfg.Root), ExitOK
 	}
 
 	cs, err := a.checkouts()
@@ -274,19 +292,23 @@ func (a *app) targetRepo(query string) (repo.Repo, int) {
 }
 
 func (a *app) inCwdRepo(c checkout.Checkout) bool {
-	root, err := git.Output(a.opts.Git, a.opts.Cwd,
-		"rev-parse", "--path-format=absolute", "--git-common-dir")
+	root, err := git.RepoRoot(a.opts.Git, a.opts.Cwd)
 	if err != nil {
 		return false
 	}
-	return checkout.SamePath(filepath.Dir(strings.TrimSuffix(root, "/")), c.Repo.Root)
+	return checkout.SamePath(root, c.Repo.Root)
 }
 
 // selectionError maps the two ways a selection ends with nothing onto statuses
 // a shell can tell apart.
 func (a *app) selectionError(err error) int {
 	switch {
-	case errors.Is(err, errNoMatch):
+	case errors.Is(err, errNoMatch), errors.Is(err, picker.ErrNoMatch):
+		if a.incomplete {
+			fmt.Fprintln(a.stderr,
+				"trepo: no matching checkout among the repositories that could be read")
+			return ExitError
+		}
 		fmt.Fprintln(a.stderr, "trepo: no matching checkout")
 		return ExitNoMatch
 	case errors.Is(err, picker.ErrUnavailable):

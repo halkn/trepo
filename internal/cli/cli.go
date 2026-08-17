@@ -37,6 +37,10 @@ type app struct {
 	cfg    config.Config
 	stdout io.Writer
 	stderr io.Writer
+
+	// incomplete records that some repository could not be read, so that an
+	// empty result is not reported as a certainty.
+	incomplete bool
 }
 
 const usage = `trepo - repositories and worktrees as one set of checkouts

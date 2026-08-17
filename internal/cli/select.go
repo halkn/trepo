@@ -16,6 +16,10 @@ import (
 var errNoMatch = errors.New("no matching checkout")
 
 // checkouts lists every checkout trepo manages.
+//
+// A repository that cannot be read is reported and left out, and the fact that
+// something was left out is remembered: "no matching checkout" would otherwise
+// be indistinguishable from "the repository holding it could not be read".
 func (a *app) checkouts() ([]checkout.Checkout, error) {
 	repos, err := repo.Discover(a.cfg.Root)
 	if err != nil {
@@ -26,6 +30,7 @@ func (a *app) checkouts() ([]checkout.Checkout, error) {
 	for _, e := range errs {
 		fmt.Fprintln(a.stderr, "trepo: "+strings.Join(strings.Fields(e.Error()), " "))
 	}
+	a.incomplete = len(errs) > 0
 	return cs, nil
 }
 

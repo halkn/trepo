@@ -436,3 +436,62 @@ func resolved(t *testing.T, p string) string {
 	}
 	return real
 }
+
+// A typo in an option name must not be read as a request. The same parser feeds
+// rm, where "--dryrun" silently becoming nothing turns a rehearsal into a
+// deletion.
+func TestUnknownOptionIsRejected(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	_, added, _ := w.run("add", "feat/x")
+	path := strings.TrimSpace(added)
+
+	code, _, stderr := w.run("rm", "feat/x", "--dryrun")
+	if code != cli.ExitError {
+		t.Errorf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if !strings.Contains(stderr, "dryrun") {
+		t.Errorf("stderr %q does not name the unknown option", stderr)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("a mistyped option removed the worktree: %v", err)
+	}
+}
+
+// A rehearsal must describe what would actually happen, so it cannot announce
+// removals the guards go on to refuse.
+func TestDryRunDoesNotAnnounceARefusedRemoval(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	_, added, _ := w.run("add", "feat/x")
+	w.cwd = strings.TrimSpace(added)
+
+	code, _, stderr := w.run("rm", "feat/x", "--dry-run")
+	if strings.Contains(stderr, "would remove") {
+		t.Errorf("dry run announced a removal it then refused:\n%s", stderr)
+	}
+	if code == cli.ExitOK {
+		t.Error("dry run reported success for a refused removal")
+	}
+}
+
+// A repository that could not be read is not a repository that holds nothing.
+// Reporting "no match" for it would tell a wrapper the checkout does not exist.
+func TestPathDoesNotReportNoMatchWhenARepositoryCouldNotBeRead(t *testing.T) {
+	w := newWorld(t)
+	broken := filepath.Join(w.root, "github.com", "halkn", "broken")
+	if err := os.MkdirAll(filepath.Join(broken, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := w.run("path", "broken")
+	if code == cli.ExitNoMatch {
+		t.Errorf("exit = %d, want it distinguished from a genuine no-match", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "broken") {
+		t.Errorf("stderr %q does not name the repository that failed", stderr)
+	}
+}
