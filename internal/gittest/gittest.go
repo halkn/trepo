@@ -101,6 +101,17 @@ func (r *Repo) Git(args ...string) string {
 	return out
 }
 
+// GitIn is Git with an explicit working directory, for commands that must run
+// in a worktree rather than in the fixture's own checkout.
+func (r *Repo) GitIn(dir string, args ...string) string {
+	r.t.Helper()
+	out, err := r.TryGitIn(dir, args...)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return out
+}
+
 // TryGit runs a git command and returns its trimmed stdout, or an error that
 // carries stderr so a failing fixture explains itself.
 func (r *Repo) TryGit(args ...string) (string, error) {

@@ -144,8 +144,8 @@ func TestListFlagsUnmergedBranchIsNotMerged(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wt, "new.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	fixture.TryGitIn(wt, "add", "-A")
-	fixture.TryGitIn(wt, "commit", "-m", "add: work")
+	fixture.GitIn(wt, "add", "-A")
+	fixture.GitIn(wt, "commit", "-m", "add: work")
 
 	got, err := lister(fixture, "/elsewhere").Repo(rp(fixture))
 	if err != nil {

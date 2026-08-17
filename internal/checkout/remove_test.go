@@ -53,7 +53,7 @@ func TestRemoveKeepsAnUnmergedBranch(t *testing.T) {
 	fixture := gittest.New(t)
 	wtPath := filepath.Join(filepath.Dir(fixture.Dir), "wt-work")
 	fixture.Git("worktree", "add", "-b", "work", wtPath)
-	fixture.TryGitIn(wtPath, "commit", "--allow-empty", "-m", "add: work")
+	fixture.GitIn(wtPath, "commit", "--allow-empty", "-m", "add: work")
 
 	target := find(t, list(t, fixture), wtPath)
 	base := checkout.ResolveBase(git.Exec{Env: fixture.Env()}, fixture.Dir)
