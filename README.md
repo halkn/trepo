@@ -96,9 +96,14 @@ the same owner and name on more than one host.
 
 `trepo rm` refuses outright to remove the main checkout, the checkout you are
 standing in, and a locked worktree. It asks first when a worktree has
-uncommitted changes, has ignored files such as a `.env`, has commits that were
-never pushed, or is protected. `--force` skips the asking, `--dry-run` skips
-the doing.
+uncommitted changes, has ignored files such as a `.env`, has commits the base
+branch does not already contain, or is protected. A detached worktree counts:
+with no branch pointing at them, its commits become unreachable once it is
+gone.
+
+`--force` skips the asking. `--dry-run` runs the guards and reports what would
+happen without removing anything or asking anything, so a refusal shows up as a
+refusal rather than as a removal that would have gone ahead.
 
 A merged branch is deleted along with its worktree, with `git branch -d` only —
 a branch git will not delete on its own terms is holding something trepo will
