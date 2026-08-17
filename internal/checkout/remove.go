@@ -59,15 +59,14 @@ func (rm Remover) Remove(c Checkout, base Base) error {
 // not account for, and keeps git's own records consistent. --force is passed
 // only once trepo's confirmation has already been given.
 func (rm Remover) detach(c Checkout) error {
-	if c.Has(FlagPrunable) {
-		// There is no directory left to remove; what remains is git's record
-		// of it, and prune is the command that clears that.
-		_, err := rm.Git.Run(c.Repo.Root, "worktree", "prune")
-		return err
-	}
-
 	args := []string{"worktree", "remove"}
-	if rm.Force {
+	if c.Has(FlagPrunable) {
+		// Nothing is left to delete, only git's record of it. `worktree
+		// remove` clears exactly that one entry, where `worktree prune` would
+		// also drop every other stale record in the repository - entries the
+		// user neither selected nor was shown.
+		args = append(args, "--force")
+	} else if rm.Force {
 		args = append(args, "--force")
 	} else if rm.Confirm != nil {
 		// The user was asked and said yes, so the state git would object to is
@@ -76,6 +75,7 @@ func (rm Remover) detach(c Checkout) error {
 			args = append(args, "--force")
 		}
 	}
+
 	_, err := rm.Git.Run(c.Repo.Root, append(args, c.Path)...)
 	return err
 }
