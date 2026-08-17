@@ -46,6 +46,10 @@ run = "go build -o trepo ./cmd/trepo"
 
 # Only the Go toolchain itself is in scope: trepo has no module dependencies to
 # audit, so a finding here means the toolchain needs upgrading.
+#
+# Pinned rather than @latest so a run is reproducible, and fetched with `go run`
+# rather than a tool directive so that go.mod keeps saying trepo depends on
+# nothing.
 [tasks.audit]
 description = "check the toolchain for known vulnerabilities"
-run = "go run golang.org/x/vuln/cmd/govulncheck@latest ./..."
+run = "go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./..."

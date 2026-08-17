@@ -99,7 +99,7 @@ mise install     # go and golangci-lint, at the versions in mise.toml
 mise run test    # go test -race ./...
 mise run lint    # gofmt check, go mod tidy -diff, golangci-lint
 mise run fmt     # gofmt -w .
-mise run audit   # govulncheck against the toolchain
+mise run audit   # govulncheck against the toolchain (needs network)
 ```
 
 Linting is golangci-lint's default set — errcheck, govet, ineffassign,
