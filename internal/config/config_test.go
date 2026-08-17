@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -117,5 +118,21 @@ func TestRepoConfigHonoursLocalOverride(t *testing.T) {
 	rc := config.LoadRepo(r, fixture.Dir)
 	if rc.WorktreeTemplate != "wt/{{.Branch}}" {
 		t.Errorf("WorktreeTemplate = %q, want the local override", rc.WorktreeTemplate)
+	}
+}
+
+// "The key is unset" and "the configuration could not be read" must not look
+// alike: silently answering with a default would point trepo at a root the
+// user never chose and show them an empty listing with nothing explaining it.
+func TestLoadReportsAnUnreadableConfiguration(t *testing.T) {
+	fixture := gittest.New(t)
+	broken := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(broken, []byte("[trepo\n  root = /x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := append(fixture.Env(), "GIT_CONFIG_GLOBAL="+broken)
+
+	if _, err := config.Load(git.Exec{Env: env}); err == nil {
+		t.Error("Load() succeeded with a malformed configuration file")
 	}
 }

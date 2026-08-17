@@ -51,14 +51,21 @@ func Load(r git.Runner) (Config, error) {
 		DefaultHost:  "github.com",
 	}
 
-	if v, ok := universe(r, "trepo.root"); ok {
-		cfg.Root = expand(v, home)
-	}
-	if v, ok := universe(r, "trepo.worktreeRoot"); ok {
-		cfg.WorktreeRoot = expand(v, home)
-	}
-	if v, ok := universe(r, "trepo.defaultHost"); ok {
-		cfg.DefaultHost = v
+	for _, key := range []struct {
+		name string
+		set  func(string)
+	}{
+		{"trepo.root", func(v string) { cfg.Root = expand(v, home) }},
+		{"trepo.worktreeRoot", func(v string) { cfg.WorktreeRoot = expand(v, home) }},
+		{"trepo.defaultHost", func(v string) { cfg.DefaultHost = v }},
+	} {
+		v, ok, err := universe(r, key.name)
+		if err != nil {
+			return Config{}, err
+		}
+		if ok {
+			key.set(v)
+		}
 	}
 	return cfg, nil
 }
@@ -69,10 +76,10 @@ func Load(r git.Runner) (Config, error) {
 func LoadRepo(r git.Runner, dir string) RepoConfig {
 	rc := RepoConfig{WorktreeTemplate: DefaultWorktreeTemplate}
 
-	if v, ok := scoped(r, dir, "trepo.worktreeTemplate"); ok {
+	if v, ok, _ := scoped(r, dir, "trepo.worktreeTemplate"); ok {
 		rc.WorktreeTemplate = v
 	}
-	if v, ok := scoped(r, dir, "trepo.previewCommand"); ok {
+	if v, ok, _ := scoped(r, dir, "trepo.previewCommand"); ok {
 		rc.PreviewCommand = v
 	}
 	rc.Protected = scopedAll(r, dir, "trepo.protected")
@@ -90,16 +97,20 @@ func dataHome(home string) string {
 
 // universe reads a key from the global scope, then the system scope. It never
 // consults the repository, which is the whole point of the distinction.
-func universe(r git.Runner, key string) (string, bool) {
+func universe(r git.Runner, key string) (string, bool, error) {
 	for _, scope := range []string{"--global", "--system"} {
-		if v, ok := configGet(r, "", scope, "--get", key); ok {
-			return v, true
+		v, ok, err := configGet(r, "", scope, "--get", key)
+		if err != nil {
+			return "", false, err
+		}
+		if ok {
+			return v, true, nil
 		}
 	}
-	return "", false
+	return "", false, nil
 }
 
-func scoped(r git.Runner, dir, key string) (string, bool) {
+func scoped(r git.Runner, dir, key string) (string, bool, error) {
 	return configGet(r, dir, "--get", key)
 }
 
@@ -111,22 +122,23 @@ func scopedAll(r git.Runner, dir, key string) []string {
 	return strings.Split(out, "\n")
 }
 
-// configGet treats "the key is unset" as an answer rather than a failure: git
-// reports it with exit status 1, which is indistinguishable from success for
-// any caller that only checks err != nil.
-func configGet(r git.Runner, dir string, args ...string) (string, bool) {
+// configGet separates "the key is unset" from "the configuration could not be
+// read". git reports the first with exit status 1 and reserves higher statuses
+// for a missing binary or a file it cannot parse; collapsing the two would let
+// a broken ~/.gitconfig quietly hand back trepo's defaults.
+func configGet(r git.Runner, dir string, args ...string) (string, bool, error) {
 	out, err := git.Output(r, dir, append([]string{"config"}, args...)...)
 	if err != nil {
 		var gitErr *git.Error
 		if errors.As(err, &gitErr) && gitErr.ExitCode == 1 {
-			return "", false
+			return "", false, nil
 		}
-		return "", false
+		return "", false, err
 	}
 	if out == "" {
-		return "", false
+		return "", false, nil
 	}
-	return out, true
+	return out, true, nil
 }
 
 func expand(v, home string) string {
