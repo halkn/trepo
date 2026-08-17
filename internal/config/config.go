@@ -35,7 +35,6 @@ type Config struct {
 type RepoConfig struct {
 	WorktreeTemplate string
 	Protected        []string
-	PreviewCommand   string
 }
 
 // Load reads the universe settings, falling back to defaults.
@@ -78,9 +77,6 @@ func LoadRepo(r git.Runner, dir string) RepoConfig {
 
 	if v, ok, _ := scoped(r, dir, "trepo.worktreeTemplate"); ok {
 		rc.WorktreeTemplate = v
-	}
-	if v, ok, _ := scoped(r, dir, "trepo.previewCommand"); ok {
-		rc.PreviewCommand = v
 	}
 	rc.Protected = scopedAll(r, dir, "trepo.protected")
 	return rc

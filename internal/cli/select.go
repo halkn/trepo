@@ -82,8 +82,13 @@ func (a *app) choose(cs []checkout.Checkout, multi bool, prompt string) ([]check
 		rows = append(rows, picker.Row{Display: row(c), Key: c.Path})
 	}
 
+	header := "enter: select"
+	if multi {
+		header = "tab: mark / enter: confirm"
+	}
 	keys, err := picker.Picker{
 		Prompt:  prompt,
+		Header:  header,
 		Multi:   multi,
 		Preview: previewCommand(),
 	}.Pick(rows)
