@@ -1,6 +1,7 @@
 package checkout_test
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -182,5 +183,53 @@ func TestAddRejectsAnEmptyBranch(t *testing.T) {
 
 	if _, err := a.Add(rp(fixture), "", ""); err == nil {
 		t.Error("Add() accepted an empty branch name")
+	}
+}
+
+// An upstream the user set on purpose is theirs. Only a branch created here off
+// a base ref can have inherited one, so only that case may drop it.
+func TestAddKeepsAnUpstreamSetOnAnExistingBranch(t *testing.T) {
+	upstream := gittest.NewBare(t)
+	fixture := gittest.New(t)
+	fixture.Git("remote", "add", "origin", upstream.Dir)
+	fixture.Git("push", "-q", "-u", "origin", "main")
+	fixture.Git("branch", "feature")
+	fixture.Git("branch", "--set-upstream-to=origin/main", "feature")
+
+	a, _ := adder(t, fixture)
+	if _, err := a.Add(rp(fixture), "feature", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := fixture.TryGit("for-each-ref", "--format=%(upstream:short)", "refs/heads/feature")
+	if got != "origin/main" {
+		t.Errorf("upstream = %q, want the one the user set", got)
+	}
+}
+
+// The record of a worktree whose directory was deleted still occupies the
+// branch, so a plain retry fails; asking again is a request to get the checkout
+// back, not to be told about bookkeeping.
+func TestAddRecreatesAWorktreeWhoseDirectoryIsGone(t *testing.T) {
+	fixture := gittest.New(t)
+	a, _ := adder(t, fixture)
+
+	first, err := a.Add(rp(fixture), "feat/x", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(first); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := a.Add(rp(fixture), "feat/x", "")
+	if err != nil {
+		t.Fatalf("Add() after the directory was deleted failed: %v", err)
+	}
+	if !checkout.SamePath(first, second) {
+		t.Errorf("Add() = %q, want it back at %q", second, first)
+	}
+	if _, err := os.Stat(second); err != nil {
+		t.Errorf("the printed path does not exist: %v", err)
 	}
 }

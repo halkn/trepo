@@ -37,12 +37,20 @@ func (a Adder) Add(r repo.Repo, branch, from string) (string, error) {
 	}
 	branch = strings.TrimPrefix(branch, "origin/")
 
-	existing, err := a.existingWorktree(r, branch)
+	existing, stale, err := a.existingWorktree(r, branch)
 	if err != nil {
 		return "", err
 	}
 	if existing != "" {
 		return existing, nil
+	}
+	if stale != "" {
+		// The directory is gone but git still has the record, and it holds
+		// both the branch and the path. Clearing it is what makes asking again
+		// give the checkout back instead of a complaint about bookkeeping.
+		if _, err := a.Git.Run(r.Root, "worktree", "remove", "--force", stale); err != nil {
+			return "", err
+		}
 	}
 
 	path, err := a.pathFor(r, branch)
@@ -53,31 +61,38 @@ func (a Adder) Add(r repo.Repo, branch, from string) (string, error) {
 		return "", err
 	}
 
-	if err := a.create(r, branch, from, path); err != nil {
+	branchIsNew, err := a.create(r, branch, from, path)
+	if err != nil {
 		return "", err
 	}
-	a.clearInheritedUpstream(r, branch)
+	if branchIsNew {
+		a.clearInheritedUpstream(r, branch)
+	}
 	return Resolve(path), nil
 }
 
-func (a Adder) create(r repo.Repo, branch, from, path string) error {
+// create makes the checkout and reports whether the branch was created here.
+// Only a branch made off a base ref can have inherited an upstream, so only
+// that answer may lead to one being dropped.
+func (a Adder) create(r repo.Repo, branch, from, path string) (branchIsNew bool, err error) {
 	localExists := git.OK(a.Git, r.Root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
 
 	switch {
 	case localExists:
 		_, err := a.Git.Run(r.Root, "worktree", "add", path, branch)
-		return err
+		return false, err
 
 	case from == "" && git.OK(a.Git, r.Root, "rev-parse", "--verify", "--quiet",
 		"refs/remotes/origin/"+branch):
 		// The branch exists only on the remote. Creating a tracking branch
 		// first is what keeps the work that is already there; branching off
-		// the integration branch would quietly start from nothing.
+		// the integration branch would quietly start from nothing. Its
+		// upstream is the one it was asked to track, so it stays.
 		if _, err := a.Git.Run(r.Root, "branch", "--track", branch, "origin/"+branch); err != nil {
-			return err
+			return false, err
 		}
 		_, err := a.Git.Run(r.Root, "worktree", "add", path, branch)
-		return err
+		return false, err
 
 	default:
 		base := from
@@ -89,22 +104,29 @@ func (a Adder) create(r repo.Repo, branch, from, path string) error {
 			}
 		}
 		_, err := a.Git.Run(r.Root, "worktree", "add", "--no-track", "-b", branch, path, base)
-		return err
+		return err == nil, err
 	}
 }
 
-// existingWorktree finds a checkout already holding the branch.
-func (a Adder) existingWorktree(r repo.Repo, branch string) (string, error) {
+// existingWorktree looks for a checkout already holding the branch, reporting a
+// usable one and a stale record separately: the first is the answer, the second
+// is in the way and has to be cleared.
+func (a Adder) existingWorktree(r repo.Repo, branch string) (existing, stale string, err error) {
 	worktrees, err := git.ListWorktrees(a.Git, r.Root)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	for _, wt := range worktrees {
-		if wt.Branch == branch && !wt.Prunable {
-			return Resolve(wt.Path), nil
+		if wt.Branch != branch {
+			continue
 		}
+		if wt.Prunable {
+			stale = wt.Path
+			continue
+		}
+		return Resolve(wt.Path), "", nil
 	}
-	return "", nil
+	return "", stale, nil
 }
 
 // pathFor renders the worktree template below the worktree root.
@@ -145,11 +167,11 @@ func (a Adder) checkFree(r repo.Repo, path string) error {
 		return nil
 	}
 
-	common, err := git.Output(a.Git, path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	owner, err := git.RepoRoot(a.Git, path)
 	if err != nil {
 		return fmt.Errorf("%s already exists and is not a worktree", path)
 	}
-	if SamePath(filepath.Dir(strings.TrimSuffix(common, "/")), r.Root) {
+	if SamePath(owner, r.Root) {
 		return nil
 	}
 	return fmt.Errorf("%s already belongs to another repository; "+
