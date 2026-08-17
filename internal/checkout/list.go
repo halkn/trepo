@@ -62,9 +62,7 @@ func (l Lister) describe(r repo.Repo, wt git.Worktree, base Base) Checkout {
 	}
 
 	if wt.Branch != "" {
-		for _, f := range l.branchFlags(r.Root, wt.Branch, base) {
-			c.Flags = append(c.Flags, f)
-		}
+		c.Flags = append(c.Flags, l.branchFlags(r.Root, wt.Branch, base)...)
 	} else if wt.Head != "" && !wt.Unborn {
 		// A detached checkout has no branch to ask about, but its commit is
 		// still either reachable from the base or reachable only from here.
