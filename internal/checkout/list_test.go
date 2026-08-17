@@ -260,3 +260,30 @@ func TestListInARepositoryWithoutCommits(t *testing.T) {
 		t.Errorf("flags = %v, want merged absent when there is no base", got[0].Flags)
 	}
 }
+
+// Reachability is what decides whether removing a checkout loses work, and a
+// detached HEAD has it just as much as a branch does.
+func TestListFlagsMergedForADetachedCheckout(t *testing.T) {
+	fixture := gittest.New(t)
+	at := filepath.Join(filepath.Dir(fixture.Dir), "wt-at-main")
+	fixture.Git("worktree", "add", "--detach", at)
+
+	ahead := filepath.Join(filepath.Dir(fixture.Dir), "wt-ahead")
+	fixture.Git("worktree", "add", "--detach", ahead)
+	if _, err := fixture.TryGitIn(ahead, "commit", "--allow-empty", "-m", "add: loose work"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := lister(fixture, "/elsewhere").Repo(rp(fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !find(t, got, at).Has(checkout.FlagMerged) {
+		t.Errorf("flags = %v, want merged for a detached checkout at the base",
+			find(t, got, at).Flags)
+	}
+	if find(t, got, ahead).Has(checkout.FlagMerged) {
+		t.Errorf("flags = %v, want merged absent for a detached checkout ahead of the base",
+			find(t, got, ahead).Flags)
+	}
+}

@@ -65,6 +65,12 @@ func (l Lister) describe(r repo.Repo, wt git.Worktree, base Base) Checkout {
 		for _, f := range l.branchFlags(r.Root, wt.Branch, base) {
 			c.Flags = append(c.Flags, f)
 		}
+	} else if wt.Head != "" && !wt.Unborn {
+		// A detached checkout has no branch to ask about, but its commit is
+		// still either reachable from the base or reachable only from here.
+		// That distinction is what says whether removing it loses work.
+		add(base.Known && git.OK(l.Git, r.Root,
+			"merge-base", "--is-ancestor", wt.Head, base.Name), FlagMerged)
 	}
 	return c
 }

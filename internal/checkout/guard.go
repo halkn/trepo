@@ -48,8 +48,13 @@ func Guard(c Checkout, base Base) Verdict {
 		v.Confirm = append(v.Confirm, "is managed by another tool")
 	}
 
-	if c.Branch != "" && !c.Has(FlagMerged) {
+	// Work that the base does not already contain lives only in this checkout.
+	// Detached counts: with no branch pointing at them, its commits become
+	// unreachable the moment the checkout goes.
+	if !c.Has(FlagUnborn) && !c.Has(FlagMerged) {
 		switch {
+		case c.Branch == "":
+			v.Confirm = append(v.Confirm, "is detached, so its commits are on no branch")
 		case c.Has(FlagUnpushed):
 			v.Confirm = append(v.Confirm, "has commits that were never pushed")
 		case c.Has(FlagNoUpstream):

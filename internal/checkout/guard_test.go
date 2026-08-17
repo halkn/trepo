@@ -133,3 +133,37 @@ func TestGuardOnADetachedCheckoutDoesNotClaimBranchState(t *testing.T) {
 		t.Errorf("Guard() = %+v, want no base claim for a detached checkout", v)
 	}
 }
+
+// A detached checkout can hold commits that are on no branch at all, so
+// removing it is the one action that makes them unreachable. Having no branch
+// name must not read as having nothing to lose.
+func TestGuardAsksAboutADetachedCheckoutHoldingItsOwnCommits(t *testing.T) {
+	c := checkout.Checkout{
+		Path: "/wt/detached", Kind: checkout.KindWorktree,
+		Flags: []checkout.Flag{checkout.FlagDetached},
+	}
+	v := checkout.Guard(c, checkout.Base{Name: "origin/main", Known: true})
+
+	if v.Refused {
+		t.Fatalf("Guard() = %+v, want a confirmation rather than a refusal", v)
+	}
+	if len(v.Confirm) == 0 {
+		t.Fatalf("Guard() = %+v, want a confirmation", v)
+	}
+	if !strings.Contains(strings.Join(v.Confirm, " "), "branch") {
+		t.Errorf("confirmations %v do not explain that the commits are on no branch", v.Confirm)
+	}
+}
+
+// Detached at a commit the base already contains loses nothing.
+func TestGuardAllowsADetachedCheckoutAlreadyInTheBase(t *testing.T) {
+	c := checkout.Checkout{
+		Path: "/wt/detached", Kind: checkout.KindWorktree,
+		Flags: []checkout.Flag{checkout.FlagDetached, checkout.FlagMerged},
+	}
+	v := checkout.Guard(c, checkout.Base{Name: "origin/main", Known: true})
+
+	if v.Refused || len(v.Confirm) != 0 {
+		t.Errorf("Guard() = %+v, want it allowed without confirmation", v)
+	}
+}
