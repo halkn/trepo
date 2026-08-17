@@ -9,13 +9,19 @@ import (
 	"github.com/halkn/trepo/internal/checkout"
 )
 
+// spec says which options a command takes: the keys are the accepted names and
+// the value reports whether the option carries a value of its own.
+type spec map[string]bool
+
 // parseFlags splits long options from positional arguments.
 //
 // Hand-rolled rather than the flag package because a query is a list of free
-// words that may follow the options, which flag stops parsing at. valued names
-// the options that take a value; every other option is a boolean and reads as
-// "true".
-func parseFlags(args []string, valued map[string]bool) (map[string]string, []string) {
+// words that may follow the options, which flag stops parsing at.
+//
+// An option outside the spec is an error rather than an unused entry in the
+// map. The same parser feeds rm, where reading "--dryrun" as nothing would turn
+// a rehearsal into a deletion.
+func parseFlags(args []string, accepted spec) (map[string]string, []string, error) {
 	flags := map[string]string{}
 	var rest []string
 
@@ -31,17 +37,24 @@ func parseFlags(args []string, valued map[string]bool) (map[string]string, []str
 		}
 
 		name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+		takesValue, known := accepted[name]
+		if !known {
+			return nil, nil, fmt.Errorf("unknown option --%s", name)
+		}
+
 		switch {
 		case hasValue:
 			flags[name] = value
-		case valued[name] && i+1 < len(args):
+		case !takesValue:
+			flags[name] = "true"
+		case i+1 < len(args):
 			i++
 			flags[name] = args[i]
 		default:
-			flags[name] = "true"
+			return nil, nil, fmt.Errorf("--%s needs a value", name)
 		}
 	}
-	return flags, rest
+	return flags, rest, nil
 }
 
 // confirmer asks the user about a removal that could lose work.
