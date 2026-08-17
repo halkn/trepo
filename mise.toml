@@ -1,14 +1,51 @@
 [tools]
 go = "1.26.6"
+golangci-lint = "2.12.2"
 
 [tasks.test]
 description = "run the test suite"
-run = "go test ./..."
+# -race by default: checkouts are listed one repository per goroutine, so a
+# data race here is a real failure mode rather than a hypothetical one.
+run = "go test -race ./..."
+
+[tasks.cover]
+description = "run the test suite and report coverage per package"
+run = "go test -race -cover ./..."
 
 [tasks.lint]
-description = "vet and format check"
-run = ["go vet ./...", "test -z \"$(gofmt -l .)\" || { gofmt -l .; exit 1; }"]
+depends = ["lint:fmt", "lint:tidy", "lint:go"]
+description = "format check, module check and linters"
+
+[tasks."lint:fmt"]
+hide = true
+run = '''
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+  printf 'not gofmt-ed:\n%s\n' "$unformatted" >&2
+  exit 1
+fi
+'''
+
+# go.mod and go.sum are the record of trepo depending on nothing outside the
+# standard library, so drift in them is worth failing over.
+[tasks."lint:tidy"]
+hide = true
+run = "go mod tidy -diff"
+
+[tasks."lint:go"]
+hide = true
+run = "golangci-lint run"
+
+[tasks.fmt]
+description = "format the source"
+run = "gofmt -w ."
 
 [tasks.build]
 description = "build the trepo binary"
 run = "go build -o trepo ./cmd/trepo"
+
+# Only the Go toolchain itself is in scope: trepo has no module dependencies to
+# audit, so a finding here means the toolchain needs upgrading.
+[tasks.audit]
+description = "check the toolchain for known vulnerabilities"
+run = "go run golang.org/x/vuln/cmd/govulncheck@latest ./..."

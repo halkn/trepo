@@ -1,0 +1,45 @@
+# Tool versions come from mise.toml so that CI runs what a developer runs.
+# Pinning them a second time here would let the two drift apart silently.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # trepo shells out to git and reasons about paths, and macOS resolves /tmp
+    # through a symlink while Linux does not. That difference has already
+    # produced one bug, so both are worth running.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: git config --global init.defaultBranch main
+      - run: mise run test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: mise run lint
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: mise run audit

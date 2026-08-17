@@ -92,6 +92,20 @@ Template variables: `{{.Host}}`, `{{.Owner}}`, `{{.Repo}}`, `{{.Branch}}`. The
 default leaves the host out, so add `{{.Host}}` if you keep repositories with
 the same owner and name on more than one host.
 
+## Development
+
+```sh
+mise install     # go and golangci-lint, at the versions in mise.toml
+mise run test    # go test -race ./...
+mise run lint    # gofmt check, go mod tidy -diff, golangci-lint
+mise run fmt     # gofmt -w .
+mise run audit   # govulncheck against the toolchain
+```
+
+Linting is golangci-lint's default set — errcheck, govet, ineffassign,
+staticcheck, unused — with one exclusion documented in `.golangci.yml`. CI runs
+the same mise tasks, so there is one definition of what passing means.
+
 ## Removing worktrees
 
 `trepo rm` refuses outright to remove the main checkout, the checkout you are

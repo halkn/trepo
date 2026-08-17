@@ -1,0 +1,24 @@
+# The default linter set is nearly the whole configuration on purpose:
+# errcheck, govet, ineffassign, staticcheck and unused. Enabling more linters
+# is a decision to maintain more, and nothing here has yet needed a check the
+# defaults do not already make.
+#
+# Formatting is not configured here. gofmt ships with the toolchain and is
+# checked by `mise run lint`, so there is no second opinion about layout.
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # errcheck already excludes fmt.Fprintln(os.Stderr) and friends by
+      # default. trepo misses that exclusion only because its commands write
+      # through an io.Writer field so tests can capture the output, and the
+      # match is on the static type.
+      #
+      # Nothing could be done with the error either: Go turns a broken pipe on
+      # fd 1 or 2 into SIGPIPE, so a failed write there ends the process rather
+      # than returning.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
