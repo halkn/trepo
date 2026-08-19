@@ -1,3 +1,6 @@
+# The toolchain development and CI run on. go.mod carries the language version
+# trepo compiles against, which is a floor for whoever installs it and moves for
+# a different reason, so the two are not copies of one another.
 [tools]
 go = "1.26.6"
 golangci-lint = "2.12.2"
