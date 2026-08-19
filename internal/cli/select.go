@@ -110,13 +110,19 @@ func (a *app) choose(cs []checkout.Checkout, multi bool, prompt string) ([]check
 
 // previewCommand runs trepo itself. Resolving the executable rather than
 // trusting PATH is what makes the preview work while developing, when the
-// binary is a temporary file that `go run` built.
+// binary is a temporary file that `go run` built. fzf hands the command to a
+// shell, so the path is quoted: an installation below a directory with a space
+// in its name would otherwise break every preview.
 func previewCommand() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
 	}
-	return exe + " status {}"
+	return shellQuote(exe) + " status {}"
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // row is the human-readable form of a checkout: repository, branch, flags.
