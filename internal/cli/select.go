@@ -103,7 +103,9 @@ func (a *app) choose(cs []checkout.Checkout, multi bool, prompt string) ([]check
 		}
 	}
 	if len(chosen) == 0 {
-		return nil, picker.ErrCancelled
+		// The user did choose; trepo just cannot say what. Reporting a
+		// cancellation would tell a wrapper the opposite of what happened.
+		return nil, fmt.Errorf("the picker returned %d rows that match no checkout", len(keys))
 	}
 	return chosen, nil
 }
