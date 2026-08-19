@@ -43,7 +43,8 @@ fails in zsh.
 usable as a data source; `--json` prints a single array.
 
 Exit statuses: `0` success, `1` nothing matched, `2` an error, `130` the
-selection was cancelled.
+choice was cancelled — the picker was dismissed, or every removal `rm`
+offered was declined.
 
 ## Layout
 

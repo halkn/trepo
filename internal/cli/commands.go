@@ -211,6 +211,7 @@ func (a *app) remove(args []string) int {
 	}
 
 	status := ExitOK
+	done := 0
 	for _, c := range chosen {
 		base := checkout.ResolveBase(a.opts.Git, c.Repo.Root)
 		if err := rm.Remove(c, base); err != nil {
@@ -222,11 +223,18 @@ func (a *app) remove(args []string) int {
 			status = ExitError
 			continue
 		}
+		done++
 		// Reported only once the guards have agreed, so a rehearsal never
 		// announces a removal that would in fact be refused.
 		if rm.DryRun {
 			fmt.Fprintf(a.stderr, "trepo: would remove %s\n", c.Path)
 		}
+	}
+	// Answering "no" to everything leaves the same world behind as dismissing
+	// the picker, and a wrapper has to be able to tell both apart from a
+	// removal that happened.
+	if status == ExitOK && done == 0 {
+		return ExitCancelled
 	}
 	return status
 }

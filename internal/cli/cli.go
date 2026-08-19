@@ -58,7 +58,8 @@ options:
   add    --repo <query> --from <ref>
   rm     --force --dry-run
 
-Cancelling a picker exits 130; finding nothing exits 1.`
+For path, add and rm: finding nothing exits 1, and cancelling exits 130 —
+dismissing the picker or declining every removal.`
 
 // Run executes one command and returns the process exit status.
 func Run(args []string, stdout, stderr io.Writer, opts Options) int {
