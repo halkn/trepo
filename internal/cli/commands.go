@@ -17,9 +17,9 @@ import (
 
 // get clones a repository into the place its URL implies.
 func (a *app) get(args []string) int {
-	_, rest, err := parseFlags(args, spec{})
-	if err != nil {
-		return fail(a.stderr, err)
+	_, rest, code, ok := a.parse(args, spec{})
+	if !ok {
+		return code
 	}
 	if len(rest) != 1 {
 		return fail(a.stderr, errors.New("usage: trepo get <owner/repo|url>"))
@@ -54,11 +54,11 @@ func (a *app) get(args []string) int {
 // list prints checkouts without ever asking a question, which is what makes it
 // usable as a data source for other tools.
 func (a *app) list(args []string) int {
-	flags, query, err := parseFlags(args, spec{
+	flags, query, code, ok := a.parse(args, spec{
 		"json": false, "repos": false, "worktrees": false, "here": false,
 	})
-	if err != nil {
-		return fail(a.stderr, err)
+	if !ok {
+		return code
 	}
 	asJSON := flags["json"] == "true"
 	onlyRepos := flags["repos"] == "true"
@@ -96,9 +96,9 @@ func (a *app) list(args []string) int {
 
 // path answers with one location and nothing else.
 func (a *app) path(args []string) int {
-	flags, query, err := parseFlags(args, spec{"repos": false})
-	if err != nil {
-		return fail(a.stderr, err)
+	flags, query, code, ok := a.parse(args, spec{"repos": false})
+	if !ok {
+		return code
 	}
 
 	cs, err := a.checkouts()
@@ -126,9 +126,9 @@ func (a *app) path(args []string) int {
 
 // add creates a worktree and prints where it is.
 func (a *app) add(args []string) int {
-	flags, rest, err := parseFlags(args, spec{"repo": true, "from": true})
-	if err != nil {
-		return fail(a.stderr, err)
+	flags, rest, code, ok := a.parse(args, spec{"repo": true, "from": true})
+	if !ok {
+		return code
 	}
 	if len(rest) != 1 {
 		return fail(a.stderr, errors.New("usage: trepo add <branch> [--repo <query>] [--from <ref>]"))
@@ -155,9 +155,9 @@ func (a *app) add(args []string) int {
 
 // remove deletes worktrees, asking before anything that cannot be undone.
 func (a *app) remove(args []string) int {
-	flags, query, err := parseFlags(args, spec{"force": false, "dry-run": false})
-	if err != nil {
-		return fail(a.stderr, err)
+	flags, query, code, ok := a.parse(args, spec{"force": false, "dry-run": false})
+	if !ok {
+		return code
 	}
 
 	all, err := a.checkouts()
@@ -214,6 +214,10 @@ func (a *app) remove(args []string) int {
 
 // status describes one checkout, and is also what the picker previews with.
 func (a *app) status(args []string) int {
+	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
+		fmt.Fprintln(a.stdout, usage)
+		return ExitOK
+	}
 	if len(args) != 1 {
 		return fail(a.stderr, errors.New("usage: trepo status <path>"))
 	}

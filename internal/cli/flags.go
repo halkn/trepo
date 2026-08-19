@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -13,7 +14,11 @@ import (
 // the value reports whether the option carries a value of its own.
 type spec map[string]bool
 
-// parseFlags splits long options from positional arguments.
+// errHelp reports that the arguments asked for the usage text rather than for
+// the command itself.
+var errHelp = errors.New("help requested")
+
+// parseFlags splits options from positional arguments.
 //
 // Hand-rolled rather than the flag package because a query is a list of free
 // words that may follow the options, which flag stops parsing at.
@@ -32,6 +37,9 @@ func parseFlags(args []string, accepted spec) (map[string]string, []string, erro
 		if arg == "--" {
 			rest = append(rest, args[i+1:]...)
 			break
+		}
+		if arg == "-h" || arg == "--help" {
+			return nil, nil, errHelp
 		}
 		if !strings.HasPrefix(arg, "--") {
 			if strings.HasPrefix(arg, "-") && arg != "-" {
@@ -64,6 +72,22 @@ func parseFlags(args []string, accepted spec) (map[string]string, []string, erro
 		}
 	}
 	return flags, rest, nil
+}
+
+// parse is parseFlags with the two ways it can end a run already handled: a
+// request for the usage text, which every command answers on stdout, and a bad
+// option, which no command can go on from. ok reports whether the caller may
+// continue; when it is false, code is what the process exits with.
+func (a *app) parse(args []string, accepted spec) (flags map[string]string, rest []string, code int, ok bool) {
+	flags, rest, err := parseFlags(args, accepted)
+	switch {
+	case errors.Is(err, errHelp):
+		fmt.Fprintln(a.stdout, usage)
+		return nil, nil, ExitOK, false
+	case err != nil:
+		return nil, nil, fail(a.stderr, err), false
+	}
+	return flags, rest, ExitOK, true
 }
 
 // confirmer asks the user about a removal that could lose work.

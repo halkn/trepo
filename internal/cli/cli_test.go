@@ -508,6 +508,22 @@ func TestQueryAfterDoubleDashIsNotAnOption(t *testing.T) {
 	}
 }
 
+// Every command answers --help itself. Failing on it would be an unfortunate
+// response from rm in particular.
+func TestHelpIsAcceptedPerCommand(t *testing.T) {
+	w := newWorld(t)
+
+	for _, args := range [][]string{{"rm", "--help"}, {"list", "-h"}, {"status", "--help"}} {
+		code, stdout, _ := w.run(args...)
+		if code != cli.ExitOK {
+			t.Errorf("%v: exit = %d, want %d", args, code, cli.ExitOK)
+		}
+		if !strings.Contains(stdout, "usage:") {
+			t.Errorf("%v: stdout = %q, want the usage text", args, stdout)
+		}
+	}
+}
+
 // A rehearsal must describe what would actually happen, so it cannot announce
 // removals the guards go on to refuse.
 func TestDryRunDoesNotAnnounceARefusedRemoval(t *testing.T) {
