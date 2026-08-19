@@ -63,7 +63,18 @@ func (a *app) list(args []string) int {
 	asJSON := flags["json"] == "true"
 	onlyRepos := flags["repos"] == "true"
 	onlyWorktrees := flags["worktrees"] == "true"
-	here := flags["here"] == "true"
+
+	// Asked once rather than per checkout, and reported rather than treated as
+	// "nothing is here": outside a repository the filter has no meaning, and an
+	// empty answer would read as a repository with no other checkouts.
+	var cwdRoot string
+	if flags["here"] == "true" {
+		root, err := git.RepoRoot(a.opts.Git, a.opts.Cwd)
+		if err != nil {
+			return fail(a.stderr, errors.New("not inside a repository, so --here has nothing to narrow to"))
+		}
+		cwdRoot = root
+	}
 
 	cs, err := a.checkouts()
 	if err != nil {
@@ -79,7 +90,7 @@ func (a *app) list(args []string) int {
 		if onlyWorktrees && c.Kind != checkout.KindWorktree {
 			continue
 		}
-		if here && !a.inCwdRepo(c) {
+		if cwdRoot != "" && !checkout.SamePath(cwdRoot, c.Repo.Root) {
 			continue
 		}
 		kept = append(kept, c)
@@ -293,14 +304,6 @@ func (a *app) targetRepo(query string) (repo.Repo, int) {
 		return repo.Repo{}, a.selectionError(err)
 	}
 	return chosen[0].Repo, ExitOK
-}
-
-func (a *app) inCwdRepo(c checkout.Checkout) bool {
-	root, err := git.RepoRoot(a.opts.Git, a.opts.Cwd)
-	if err != nil {
-		return false
-	}
-	return checkout.SamePath(root, c.Repo.Root)
 }
 
 // selectionError maps the two ways a selection ends with nothing onto statuses

@@ -524,6 +524,24 @@ func TestHelpIsAcceptedPerCommand(t *testing.T) {
 	}
 }
 
+// Outside a repository --here has nothing to narrow to. Printing nothing would
+// be indistinguishable from a repository with no other checkouts.
+func TestListHereOutsideARepositoryIsAnError(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("github.com", "halkn", "alpha")
+
+	code, stdout, stderr := w.run("list", "--here")
+	if code != cli.ExitError {
+		t.Errorf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "--here") {
+		t.Errorf("stderr %q does not explain the refusal", stderr)
+	}
+}
+
 // A rehearsal must describe what would actually happen, so it cannot announce
 // removals the guards go on to refuse.
 func TestDryRunDoesNotAnnounceARefusedRemoval(t *testing.T) {
