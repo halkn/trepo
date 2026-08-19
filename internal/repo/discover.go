@@ -32,7 +32,7 @@ func Discover(root string) ([]Repo, error) {
 			}
 			for _, name := range names {
 				dir := filepath.Join(root, host, owner, name)
-				if isRepo(dir) {
+				if IsRepo(dir) {
 					found = append(found, Repo{Host: host, Owner: owner, Name: name, Root: dir})
 					continue
 				}
@@ -44,7 +44,7 @@ func Discover(root string) ([]Repo, error) {
 				}
 				for _, leaf := range deeper {
 					leafDir := filepath.Join(dir, leaf)
-					if isRepo(leafDir) {
+					if IsRepo(leafDir) {
 						found = append(found, Repo{
 							Host:  host,
 							Owner: owner + "/" + name,
@@ -73,7 +73,8 @@ func resolveSymlinks(p string) string {
 	return filepath.Join(resolveSymlinks(filepath.Clean(dir)), leaf)
 }
 
-func isRepo(dir string) bool {
+// IsRepo reports whether dir is a checkout rather than a plain directory.
+func IsRepo(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, ".git"))
 	return err == nil
 }

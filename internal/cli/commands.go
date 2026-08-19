@@ -32,6 +32,13 @@ func (a *app) get(args []string) int {
 	dest := filepath.Join(a.cfg.Root, src.Repo.RelPath())
 
 	if _, err := os.Stat(dest); err == nil {
+		if !repo.IsRepo(dest) {
+			// What an interrupted clone leaves behind. Printing the path would
+			// send every later `cd -- "$(trepo get ...)"` into a directory that
+			// no run of get would ever repair.
+			return fail(a.stderr, fmt.Errorf(
+				"%s already exists but is not a repository; remove it and run get again", dest))
+		}
 		// Already there. Printing the path rather than complaining keeps
 		// `cd -- "$(trepo get ...)"` working whether or not this is the first
 		// time the repository was asked for.

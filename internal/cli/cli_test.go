@@ -542,6 +542,27 @@ func TestListHereOutsideARepositoryIsAnError(t *testing.T) {
 	}
 }
 
+// What an interrupted clone leaves behind must not be handed out as a checkout,
+// or `cd -- "$(trepo get ...)"` lands in it forever.
+func TestGetRefusesADirectoryThatIsNotARepository(t *testing.T) {
+	w := newWorld(t)
+	dest := filepath.Join(w.root, "github.com", "halkn", "alpha")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := w.run("get", "halkn/alpha")
+	if code != cli.ExitError {
+		t.Errorf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "not a repository") {
+		t.Errorf("stderr %q does not say why", stderr)
+	}
+}
+
 // A rehearsal must describe what would actually happen, so it cannot announce
 // removals the guards go on to refuse.
 func TestDryRunDoesNotAnnounceARefusedRemoval(t *testing.T) {
