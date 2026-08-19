@@ -162,6 +162,7 @@ func (a *app) add(args []string) int {
 		Git:          a.opts.Git,
 		WorktreeRoot: a.cfg.WorktreeRoot,
 		Template:     rc.WorktreeTemplate,
+		Warn:         func(msg string) { fmt.Fprintln(a.stderr, "trepo: "+msg) },
 	}.Add(target, rest[0], flags["from"])
 	if err != nil {
 		return fail(a.stderr, err)

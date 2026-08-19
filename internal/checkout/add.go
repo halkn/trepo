@@ -16,6 +16,10 @@ type Adder struct {
 	Git          git.Runner
 	WorktreeRoot string
 	Template     string
+
+	// Warn reports something the caller asked for that could not be honoured,
+	// while the request as a whole still succeeds. A nil Warn drops the message.
+	Warn func(string)
 }
 
 // templateData is what a worktree template may refer to.
@@ -42,6 +46,7 @@ func (a Adder) Add(r repo.Repo, branch, from string) (string, error) {
 		return "", err
 	}
 	if existing != "" {
+		a.warnUnusedBase(branch, from)
 		return existing, nil
 	}
 	if stale != "" {
@@ -79,6 +84,7 @@ func (a Adder) create(r repo.Repo, branch, from, path string) (branchIsNew bool,
 
 	switch {
 	case localExists:
+		a.warnUnusedBase(branch, from)
 		_, err := a.Git.Run(r.Root, "worktree", "add", path, branch)
 		return false, err
 
@@ -106,6 +112,17 @@ func (a Adder) create(r repo.Repo, branch, from, path string) (branchIsNew bool,
 		_, err := a.Git.Run(r.Root, "worktree", "add", "--no-track", "-b", branch, path, base)
 		return err == nil, err
 	}
+}
+
+// warnUnusedBase says that a branch which already exists was not rebuilt on the
+// requested base. Checking out the branch as it is stays the right answer for
+// an idempotent command, but silence would leave the user believing the
+// checkout starts where they asked.
+func (a Adder) warnUnusedBase(branch, from string) {
+	if from == "" || a.Warn == nil {
+		return
+	}
+	a.Warn(fmt.Sprintf("%s already exists, so it was not created from %s", branch, from))
 }
 
 // existingWorktree looks for a checkout already holding the branch, reporting a

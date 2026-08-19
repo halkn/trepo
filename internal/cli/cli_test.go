@@ -563,6 +563,34 @@ func TestGetRefusesADirectoryThatIsNotARepository(t *testing.T) {
 	}
 }
 
+// add is idempotent, so an existing branch is checked out as it is. Saying so
+// is what keeps the user from believing it starts at the base they named.
+func TestAddSaysWhenFromWasNotUsed(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	if _, err := w.fixture.TryGitIn(w.cwd, "branch", "feat/x"); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := w.run("add", "feat/x", "--from", "main")
+	if code != cli.ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	if countLines(stdout) != 1 {
+		t.Errorf("stdout has %d lines, want exactly the path:\n%s", countLines(stdout), stdout)
+	}
+	if !strings.Contains(stderr, "from main") {
+		t.Errorf("stderr %q does not report that the base was unused", stderr)
+	}
+
+	// The same holds once the worktree itself is there, which is the answer a
+	// repeated add returns.
+	_, _, stderr = w.run("add", "feat/x", "--from", "main")
+	if !strings.Contains(stderr, "from main") {
+		t.Errorf("stderr %q does not report that the base was unused", stderr)
+	}
+}
+
 // A rehearsal must describe what would actually happen, so it cannot announce
 // removals the guards go on to refuse.
 func TestDryRunDoesNotAnnounceARefusedRemoval(t *testing.T) {
