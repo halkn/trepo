@@ -524,6 +524,22 @@ func TestHelpIsAcceptedPerCommand(t *testing.T) {
 	}
 }
 
+// The version is asked for when something is wrong, so it must answer without
+// reading git config: an unreadable config is one of the things being reported.
+func TestVersionIsAnsweredWithoutConfig(t *testing.T) {
+	w := newWorld(t)
+
+	for _, args := range [][]string{{"--version"}, {"version"}} {
+		code, stdout, stderr := w.run(args...)
+		if code != cli.ExitOK {
+			t.Errorf("%v: exit = %d, want %d (stderr = %s)", args, code, cli.ExitOK, stderr)
+		}
+		if countLines(stdout) != 1 || !strings.HasPrefix(stdout, "trepo ") {
+			t.Errorf("%v: stdout = %q, want one line naming the build", args, stdout)
+		}
+	}
+}
+
 // Outside a repository --here has nothing to narrow to. Printing nothing would
 // be indistinguishable from a repository with no other checkouts.
 func TestListHereOutsideARepositoryIsAnError(t *testing.T) {
