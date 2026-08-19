@@ -10,6 +10,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"runtime/debug"
 	"strings"
 
 	"github.com/halkn/trepo/internal/config"
@@ -52,6 +53,7 @@ usage:
   trepo add <branch>                   create a worktree and print its path
   trepo rm [<query>...]                remove worktrees
   trepo status <path>                  describe one checkout
+  trepo version                        print which build this is
 
 options:
   list   --json --repos --worktrees --here
@@ -77,6 +79,12 @@ func Run(args []string, stdout, stderr io.Writer, opts Options) int {
 	switch name {
 	case "-h", "--help", "help":
 		fmt.Fprintln(stdout, usage)
+		return ExitOK
+	case "--version", "version":
+		// Answered before the configuration is read: an unreadable git config
+		// is one of the things a version is asked for in order to report.
+		info, _ := debug.ReadBuildInfo()
+		fmt.Fprintln(stdout, versionLine(info))
 		return ExitOK
 	}
 

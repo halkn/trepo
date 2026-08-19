@@ -25,6 +25,7 @@ trepo path [<query>...]              print the path of one checkout
 trepo add <branch>                   create a worktree and print its path
 trepo rm [<query>...]                remove worktrees
 trepo status <path>                  describe one checkout
+trepo version                        print which build this is
 ```
 
 `get`, `path` and `add` print a path on stdout and nothing else, so they
