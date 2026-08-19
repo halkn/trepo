@@ -55,6 +55,7 @@ usage:
 
 options:
   list   --json --repos --worktrees --here
+  path   --repos
   add    --repo <query> --from <ref>
   rm     --force --dry-run
 
