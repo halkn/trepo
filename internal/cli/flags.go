@@ -18,9 +18,11 @@ type spec map[string]bool
 // Hand-rolled rather than the flag package because a query is a list of free
 // words that may follow the options, which flag stops parsing at.
 //
-// An option outside the spec is an error rather than an unused entry in the
-// map. The same parser feeds rm, where reading "--dryrun" as nothing would turn
-// a rehearsal into a deletion.
+// Anything that looks like an option and is outside the spec is an error rather
+// than an unused entry in the map or a query term. The same parser feeds rm,
+// where reading "--dryrun" as nothing would turn a rehearsal into a deletion,
+// and reading "-f" as a query word would search for it instead of forcing. A
+// query that genuinely starts with a dash comes after "--".
 func parseFlags(args []string, accepted spec) (map[string]string, []string, error) {
 	flags := map[string]string{}
 	var rest []string
@@ -32,6 +34,9 @@ func parseFlags(args []string, accepted spec) (map[string]string, []string, erro
 			break
 		}
 		if !strings.HasPrefix(arg, "--") {
+			if strings.HasPrefix(arg, "-") && arg != "-" {
+				return nil, nil, fmt.Errorf("unknown option %s", arg)
+			}
 			rest = append(rest, arg)
 			continue
 		}
@@ -43,6 +48,10 @@ func parseFlags(args []string, accepted spec) (map[string]string, []string, erro
 		}
 
 		switch {
+		case hasValue && !takesValue:
+			// Reading the value as truth would make --dry-run=0 delete, since
+			// every reader of a switch compares against "true".
+			return nil, nil, fmt.Errorf("--%s takes no value", name)
 		case hasValue:
 			flags[name] = value
 		case !takesValue:

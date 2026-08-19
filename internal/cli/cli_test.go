@@ -458,6 +458,56 @@ func TestUnknownOptionIsRejected(t *testing.T) {
 	}
 }
 
+// A switch carries no value, so a value attached to one was meant as something
+// else. Reading it as truth would make --dry-run=0 delete.
+func TestValueOnASwitchIsRejected(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	_, added, _ := w.run("add", "feat/x")
+	path := strings.TrimSpace(added)
+
+	code, _, stderr := w.run("rm", "feat/x", "--dry-run=1")
+	if code != cli.ExitError {
+		t.Errorf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if !strings.Contains(stderr, "dry-run") {
+		t.Errorf("stderr %q does not name the option", stderr)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("--dry-run=1 removed the worktree: %v", err)
+	}
+}
+
+// An unknown short option must be refused rather than searched for: reading
+// "-f" as a query word makes rm quietly match nothing instead of forcing.
+func TestUnknownShortOptionIsRejected(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("github.com", "halkn", "alpha")
+
+	code, stdout, stderr := w.run("path", "-f", "alpha")
+	if code != cli.ExitError {
+		t.Errorf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "-f") {
+		t.Errorf("stderr %q does not name the option", stderr)
+	}
+}
+
+// A query term that starts with a dash is still reachable, so the guard above
+// does not cost the ability to search for one.
+func TestQueryAfterDoubleDashIsNotAnOption(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("github.com", "halkn", "alpha")
+
+	code, _, stderr := w.run("path", "--", "-f")
+	if code != cli.ExitNoMatch {
+		t.Errorf("exit = %d, want %d (stderr = %s)", code, cli.ExitNoMatch, stderr)
+	}
+}
+
 // A rehearsal must describe what would actually happen, so it cannot announce
 // removals the guards go on to refuse.
 func TestDryRunDoesNotAnnounceARefusedRemoval(t *testing.T) {
