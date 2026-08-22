@@ -7,17 +7,26 @@ import (
 	"github.com/halkn/trepo/internal/git"
 )
 
-// ErrSkipped is returned when the user declined a removal. It is not a failure
-// of the command, so callers report it and carry on with the next target.
+// ErrSkipped marks a removal that the guards stopped short of: the user
+// declined, or there was nobody to ask. Neither is a failure of the command, so
+// callers report it and carry on with the next target.
 var ErrSkipped = errors.New("skipped")
+
+// skipped carries the reason one checkout was left alone. It reads as ErrSkipped
+// while printing only its own message, so a caller can both recognise the case
+// and tell the user what would have to change for the removal to happen.
+type skipped struct{ msg string }
+
+func (s skipped) Error() string { return s.msg }
+func (s skipped) Unwrap() error { return ErrSkipped }
 
 // Remover deletes worktrees.
 type Remover struct {
 	Git git.Runner
 
 	// Confirm is asked before anything that could lose work. A nil Confirm
-	// means there is no way to ask, so such a removal is refused rather than
-	// assumed.
+	// means there is no way to ask — no terminal, or a caller that said not to
+	// — so such a removal is skipped rather than assumed.
 	Confirm func(Checkout, Verdict) bool
 
 	Force  bool
@@ -33,11 +42,14 @@ func (rm Remover) Remove(c Checkout, base Base) error {
 
 	if len(v.Confirm) > 0 && !rm.Force {
 		if rm.Confirm == nil {
-			return fmt.Errorf("%s %s; rerun with --force to remove it anyway",
-				c.Path, v.Confirm[0])
+			// One reason, not all of them: this line ends up inside other
+			// tools' interfaces, and the first reason is already enough to say
+			// why the checkout is still there.
+			return skipped{fmt.Sprintf("skipped %s: it %s; rerun with --force to remove it anyway",
+				c.Path, v.Confirm[0])}
 		}
 		if !rm.Confirm(c, v) {
-			return fmt.Errorf("%s: %w", c.Path, ErrSkipped)
+			return skipped{"skipped " + c.Path}
 		}
 	}
 

@@ -95,8 +95,8 @@ func (a *app) parse(args []string, accepted spec) (flags map[string]string, rest
 // The question goes to /dev/tty rather than to stdin: by the time it is asked,
 // stdin has usually been handed to fzf and is at EOF, and reading it would
 // turn every interactive removal into a refusal. A machine with no terminal
-// gets no confirmer at all, so those removals are refused with an explanation
-// instead of being assumed.
+// gets no confirmer at all, which lands it where --no-confirm does: those
+// removals are skipped with an explanation instead of being assumed.
 func (a *app) confirmer() func(checkout.Checkout, checkout.Verdict) bool {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
