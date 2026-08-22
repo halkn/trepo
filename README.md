@@ -102,11 +102,37 @@ mise run test    # go test -race ./...
 mise run lint    # gofmt check, go mod tidy -diff, golangci-lint
 mise run fmt     # gofmt -w .
 mise run audit   # govulncheck against the toolchain (needs network)
+mise run dist    # release archives and checksums into dist/
 ```
 
 Linting is golangci-lint's default set — errcheck, govet, ineffassign,
 staticcheck, unused — with one exclusion documented in `.golangci.yml`. CI runs
 the same mise tasks, so there is one definition of what passing means.
+
+## Releasing
+
+Push an annotated tag named `vX.Y.Z`. The tag message becomes the release note,
+so write it for readers of the release page. CI then runs the tests and linters,
+builds the archives with `mise run dist`, and publishes them with their
+checksums.
+
+```sh
+git tag -a v0.2.0 -m "v0.2.0 - <what changed>"
+git push origin v0.2.0
+```
+
+The archives carry signed build provenance, so a download can be traced back to
+the workflow run and commit that produced it:
+
+```sh
+gh attestation verify trepo_v0.2.0_darwin_arm64.tar.gz --repo halkn/trepo
+```
+
+`v0.1.0` predates that workflow and was built by hand, so it has no attestation.
+
+Versions are not written down in the source: `trepo version` reports what Go
+stamped from the tag, so a build that is not made from a tagged, clean checkout
+says so rather than claiming a release number.
 
 ## Removing worktrees
 

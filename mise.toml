@@ -56,3 +56,27 @@ run = "go build -o trepo ./cmd/trepo"
 [tasks.audit]
 description = "check the toolchain for known vulnerabilities"
 run = "go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./..."
+
+# The archive layout and the platform list are here rather than in the release
+# workflow so that a release can be reproduced locally with the same command CI
+# runs. Version comes from the tag Go stamps into the binary, so nothing needs
+# -ldflags to keep `trepo version` honest.
+[tasks.dist]
+description = "build the release archives and their checksums into dist/"
+run = '''
+set -eu
+version=${VERSION:-$(git describe --tags --always)}
+rm -rf dist
+mkdir -p dist
+for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
+  os=${target%/*}
+  arch=${target#*/}
+  name="trepo_${version}_${os}_${arch}"
+  mkdir -p "dist/$name"
+  GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -o "dist/$name/trepo" ./cmd/trepo
+  cp LICENSE README.md "dist/$name/"
+  tar -czf "dist/$name.tar.gz" -C dist "$name"
+  rm -rf "dist/$name"
+done
+cd dist && shasum -a 256 *.tar.gz > "trepo_${version}_checksums.txt"
+'''
