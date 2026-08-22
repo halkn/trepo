@@ -645,6 +645,128 @@ func TestListHereOutsideARepositoryIsAnError(t *testing.T) {
 	}
 }
 
+// worktreeWith creates a worktree and puts it into the state the name suggests.
+func (w *world) worktreeWith(branch string, prepare func(path string)) string {
+	w.t.Helper()
+	_, added, _ := w.run("add", branch)
+	path := strings.TrimSpace(added)
+	if path == "" {
+		w.t.Fatalf("add %s produced no path", branch)
+	}
+	if prepare != nil {
+		prepare(path)
+	}
+	return path
+}
+
+func TestRemoveReclaimableTakesOnlyTheFinishedWorktrees(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+
+	done := w.worktreeWith("feat/done", nil)
+	dirty := w.worktreeWith("feat/dirty", func(path string) {
+		if err := os.WriteFile(filepath.Join(path, "scratch.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+	unmerged := w.worktreeWith("feat/unmerged", func(path string) {
+		if _, err := w.fixture.TryGitIn(path, "commit", "--allow-empty", "-m", "add: work"); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	code, stdout, stderr := w.run("rm", "--reclaimable")
+	if code != cli.ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	if _, err := os.Stat(done); !os.IsNotExist(err) {
+		t.Errorf("a merged, clean worktree survived reclamation: %v", err)
+	}
+	for _, kept := range []string{dirty, unmerged} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Errorf("%s was reclaimed although it still holds work: %v", kept, err)
+		}
+	}
+}
+
+// Nothing to reclaim is nothing found, which is what every other command that
+// answers with a checkout already reports.
+func TestRemoveReclaimableWithNothingToTakeExitsNoMatch(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	kept := w.worktreeWith("feat/dirty", func(path string) {
+		if err := os.WriteFile(filepath.Join(path, "scratch.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	code, _, _ := w.run("rm", "--reclaimable")
+	if code != cli.ExitNoMatch {
+		t.Errorf("exit = %d, want %d", code, cli.ExitNoMatch)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Errorf("the worktree was removed anyway: %v", err)
+	}
+}
+
+func TestRemoveReclaimableDryRunReportsWithoutRemoving(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	done := w.worktreeWith("feat/done", nil)
+
+	code, _, stderr := w.run("rm", "--reclaimable", "--dry-run")
+	if code != cli.ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	if !strings.Contains(stderr, "would remove") || !strings.Contains(stderr, done) {
+		t.Errorf("stderr %q does not name what would be reclaimed", stderr)
+	}
+	if _, err := os.Stat(done); err != nil {
+		t.Errorf("the rehearsal removed the worktree: %v", err)
+	}
+}
+
+// The selection already excludes everything --force would push past, so the
+// option can only mislead about how much is being taken.
+func TestRemoveReclaimableRejectsForce(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	done := w.worktreeWith("feat/done", nil)
+
+	code, _, stderr := w.run("rm", "--reclaimable", "--force")
+	if code != cli.ExitError {
+		t.Fatalf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if !strings.Contains(stderr, "--reclaimable") || !strings.Contains(stderr, "--force") {
+		t.Errorf("stderr %q does not name both options", stderr)
+	}
+	if _, err := os.Stat(done); err != nil {
+		t.Errorf("the rejected run removed the worktree anyway: %v", err)
+	}
+}
+
+// The query keeps its meaning: reclaiming is what may be taken, not what must.
+func TestRemoveReclaimableNarrowsWithTheQuery(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	target := w.worktreeWith("feat/one", nil)
+	other := w.worktreeWith("feat/two", nil)
+
+	code, _, stderr := w.run("rm", "--reclaimable", "one")
+	if code != cli.ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("the queried worktree survived: %v", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("a worktree outside the query was reclaimed: %v", err)
+	}
+}
+
 // Narrowing to the repository at hand is the common case for both commands, and
 // the query that would express it otherwise is the repository slug the caller
 // would have to go and find first.

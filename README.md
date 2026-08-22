@@ -23,7 +23,7 @@ trepo get <repo>                     clone a repository into the trepo root
 trepo list [<query>...]              list checkouts
 trepo path [<query>...]              print the path of one checkout
 trepo add <branch>                   create a worktree and print its path
-trepo rm [<query>...]                remove worktrees
+trepo rm [<query>...]                remove worktrees, or reclaim finished ones
 trepo status <path>                  describe one checkout
 trepo version                        print which build this is
 ```
@@ -181,3 +181,30 @@ same status an unattended run would.
 A merged branch is deleted along with its worktree, with `git branch -d` only —
 a branch git will not delete on its own terms is holding something trepo will
 not discard.
+
+## Reclaiming finished worktrees
+
+`trepo rm --reclaimable` takes the worktrees whose job is done, without a
+picker and without a question:
+
+```sh
+trepo rm --reclaimable            # everywhere
+trepo rm --reclaimable --here     # this repository only
+```
+
+A worktree is reclaimed when it is merged into the base, when the branch it
+tracks was deleted on the remote, or when its directory is already gone and
+only git's record of it is left. Anything holding work is left alone:
+uncommitted changes, ignored files, a protected checkout, a detached one, and
+commits that are on no remote. The checkout you are standing in, the main
+checkout and a locked worktree are never candidates.
+
+The branch retired on the remote is what a squash merge leaves behind — the
+commits never become ancestors of the base, so nothing marks them merged.
+Removing the worktree keeps the local branch either way, since only a merged
+branch is deleted with its checkout, so the commits stay reachable.
+
+A query still narrows what may be taken, and `--dry-run` reports it without
+removing anything. Finding nothing to reclaim exits `1`, like any other command
+that answers with a checkout. `--force` cannot be combined with it: the
+selection already excludes everything `--force` would push past.
