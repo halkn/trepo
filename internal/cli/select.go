@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/halkn/trepo/internal/checkout"
+	"github.com/halkn/trepo/internal/git"
 	"github.com/halkn/trepo/internal/picker"
 	"github.com/halkn/trepo/internal/repo"
 )
@@ -55,6 +56,34 @@ func filter(cs []checkout.Checkout, query []string) []checkout.Checkout {
 		}
 	}
 	return out
+}
+
+// here narrows checkouts to the repository the working directory belongs to,
+// when --here was given.
+//
+// What it narrows to is the repository, not the checkout, so standing in a
+// worktree still means every checkout of the repository that worktree is part
+// of. The lookup happens once rather than per checkout, and failing to find a
+// repository is reported rather than treated as "nothing is here": outside a
+// repository the filter has no meaning, and an empty answer would read as a
+// repository with no other checkouts.
+func (a *app) here(cs []checkout.Checkout, flags map[string]string) ([]checkout.Checkout, int) {
+	if flags["here"] != "true" {
+		return cs, ExitOK
+	}
+	root, err := git.RepoRoot(a.opts.Git, a.opts.Cwd)
+	if err != nil {
+		return nil, fail(a.stderr,
+			errors.New("not inside a repository, so --here has nothing to narrow to"))
+	}
+
+	var kept []checkout.Checkout
+	for _, c := range cs {
+		if checkout.SamePath(root, c.Repo.Root) {
+			kept = append(kept, c)
+		}
+	}
+	return kept, ExitOK
 }
 
 // choose narrows a list to what the user meant.

@@ -71,23 +71,14 @@ func (a *app) list(args []string) int {
 	onlyRepos := flags["repos"] == "true"
 	onlyWorktrees := flags["worktrees"] == "true"
 
-	// Asked once rather than per checkout, and reported rather than treated as
-	// "nothing is here": outside a repository the filter has no meaning, and an
-	// empty answer would read as a repository with no other checkouts.
-	var cwdRoot string
-	if flags["here"] == "true" {
-		root, err := git.RepoRoot(a.opts.Git, a.opts.Cwd)
-		if err != nil {
-			return fail(a.stderr, errors.New("not inside a repository, so --here has nothing to narrow to"))
-		}
-		cwdRoot = root
-	}
-
 	cs, err := a.checkouts()
 	if err != nil {
 		return fail(a.stderr, err)
 	}
-	cs = filter(cs, query)
+	cs, code = a.here(filter(cs, query), flags)
+	if code != ExitOK {
+		return code
+	}
 
 	var kept []checkout.Checkout
 	for _, c := range cs {
@@ -95,9 +86,6 @@ func (a *app) list(args []string) int {
 			continue
 		}
 		if onlyWorktrees && c.Kind != checkout.KindWorktree {
-			continue
-		}
-		if cwdRoot != "" && !checkout.SamePath(cwdRoot, c.Repo.Root) {
 			continue
 		}
 		kept = append(kept, c)
@@ -114,7 +102,7 @@ func (a *app) list(args []string) int {
 
 // path answers with one location and nothing else.
 func (a *app) path(args []string) int {
-	flags, query, code, ok := a.parse(args, spec{"repos": false})
+	flags, query, code, ok := a.parse(args, spec{"repos": false, "here": false})
 	if !ok {
 		return code
 	}
@@ -123,7 +111,10 @@ func (a *app) path(args []string) int {
 	if err != nil {
 		return fail(a.stderr, err)
 	}
-	cs = filter(cs, query)
+	cs, code = a.here(filter(cs, query), flags)
+	if code != ExitOK {
+		return code
+	}
 	if flags["repos"] == "true" {
 		var kept []checkout.Checkout
 		for _, c := range cs {
@@ -175,7 +166,7 @@ func (a *app) add(args []string) int {
 // remove deletes worktrees, asking before anything that cannot be undone.
 func (a *app) remove(args []string) int {
 	flags, query, code, ok := a.parse(args,
-		spec{"force": false, "dry-run": false, "no-confirm": false})
+		spec{"force": false, "dry-run": false, "no-confirm": false, "here": false})
 	if !ok {
 		return code
 	}
@@ -191,7 +182,10 @@ func (a *app) remove(args []string) int {
 		return fail(a.stderr, err)
 	}
 
-	candidates := filter(all, query)
+	candidates, code := a.here(filter(all, query), flags)
+	if code != ExitOK {
+		return code
+	}
 	// The main checkout can never be a target, so offering it would only make
 	// the list longer and the refusal more likely.
 	var removable []checkout.Checkout
