@@ -51,7 +51,7 @@ usage:
   trepo list [<query>...]              list checkouts
   trepo path [<query>...]              print the path of one checkout
   trepo add <branch>                   create a worktree and print its path
-  trepo rm [<query>...]                remove worktrees
+  trepo rm [<query>...]                remove worktrees, or reclaim finished ones
   trepo status <path>                  describe one checkout
   trepo version                        print which build this is
 
@@ -59,13 +59,15 @@ options:
   list   --json --repos --worktrees --here
   path   --repos --here
   add    --repo <query> --from <ref>
-  rm     --force --dry-run --no-confirm --here
+  rm     --force --dry-run --no-confirm --here --reclaimable
 
 --here narrows to the repository the working directory belongs to, whichever
 of its checkouts you are standing in.
 
 --force removes what rm would otherwise ask about; --no-confirm keeps it and
-says why, for callers that cannot answer a question.
+says why, for callers that cannot answer a question. --reclaimable asks
+nothing either: it takes the worktrees whose work is done — merged, retired on
+the remote, or already deleted by hand — and leaves the rest.
 
 For path, add and rm: finding nothing exits 1, and cancelling exits 130 —
 dismissing the picker, or every removal being declined or kept.`

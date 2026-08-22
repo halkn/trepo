@@ -165,8 +165,10 @@ func (a *app) add(args []string) int {
 
 // remove deletes worktrees, asking before anything that cannot be undone.
 func (a *app) remove(args []string) int {
-	flags, query, code, ok := a.parse(args,
-		spec{"force": false, "dry-run": false, "no-confirm": false, "here": false})
+	flags, query, code, ok := a.parse(args, spec{
+		"force": false, "dry-run": false, "no-confirm": false,
+		"here": false, "reclaimable": false,
+	})
 	if !ok {
 		return code
 	}
@@ -175,6 +177,13 @@ func (a *app) remove(args []string) int {
 	if flags["force"] == "true" && flags["no-confirm"] == "true" {
 		return fail(a.stderr, errors.New(
 			"--force removes without asking and --no-confirm keeps whatever needs asking; pass one"))
+	}
+	reclaim := flags["reclaimable"] == "true"
+	// Reclaiming only ever selects what needs no question, so --force could not
+	// widen it; passing both reads as authority the run does not have.
+	if flags["force"] == "true" && reclaim {
+		return fail(a.stderr, errors.New(
+			"--reclaimable only takes what needs no confirmation, so --force adds nothing; pass one"))
 	}
 
 	all, err := a.checkouts()
@@ -195,8 +204,18 @@ func (a *app) remove(args []string) int {
 		}
 	}
 
-	chosen, err := a.choose(removable, true, "remove> ")
-	if err != nil {
+	bases := &baseCache{git: a.opts.Git, seen: map[string]checkout.Base{}}
+	var chosen []checkout.Checkout
+	if reclaim {
+		for _, c := range removable {
+			if checkout.Reclaimable(c, bases.of(c.Repo.Root)) {
+				chosen = append(chosen, c)
+			}
+		}
+		if len(chosen) == 0 {
+			return a.selectionError(errNoMatch)
+		}
+	} else if chosen, err = a.choose(removable, true, "remove> "); err != nil {
 		return a.selectionError(err)
 	}
 
@@ -205,19 +224,25 @@ func (a *app) remove(args []string) int {
 		Force:  flags["force"] == "true",
 		DryRun: flags["dry-run"] == "true",
 	}
-	// A rehearsal asks nothing, because it does nothing there is anything to
-	// agree to, and --no-confirm is the caller saying they cannot be asked.
-	// Either way the removals that would need an answer are skipped with their
-	// reason, which is what keeps the guards in place for a caller whose stdin
-	// belongs to something else.
-	if !rm.DryRun && flags["no-confirm"] != "true" {
+	switch {
+	case reclaim:
+		// The selection is the answer. Every target already needs no question
+		// except the one reclaiming settles - a branch retired on the remote -
+		// and saying yes here is what tells the removal it may go ahead with it.
+		rm.Confirm = func(checkout.Checkout, checkout.Verdict) bool { return true }
+	case !rm.DryRun && flags["no-confirm"] != "true":
+		// A rehearsal asks nothing, because it does nothing there is anything to
+		// agree to, and --no-confirm is the caller saying they cannot be asked.
+		// Either way the removals that would need an answer are skipped with
+		// their reason, which is what keeps the guards in place for a caller
+		// whose stdin belongs to something else.
 		rm.Confirm = a.confirmer()
 	}
 
 	status := ExitOK
 	done := 0
 	for _, c := range chosen {
-		base := checkout.ResolveBase(a.opts.Git, c.Repo.Root)
+		base := bases.of(c.Repo.Root)
 		if err := rm.Remove(c, base); err != nil {
 			if errors.Is(err, checkout.ErrSkipped) {
 				fmt.Fprintln(a.stderr, "trepo: "+oneline(err))
@@ -241,6 +266,24 @@ func (a *app) remove(args []string) int {
 		return ExitCancelled
 	}
 	return status
+}
+
+// baseCache answers what a repository's integration branch is, once per
+// repository. The answer is the same for every checkout of one repository, and
+// resolving it per candidate would run git twice over for each of them: once to
+// select, once to remove.
+type baseCache struct {
+	git  git.Runner
+	seen map[string]checkout.Base
+}
+
+func (b *baseCache) of(root string) checkout.Base {
+	if base, ok := b.seen[root]; ok {
+		return base
+	}
+	base := checkout.ResolveBase(b.git, root)
+	b.seen[root] = base
+	return base
 }
 
 // status describes one checkout, and is also what the picker previews with.
