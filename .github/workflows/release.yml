@@ -1,0 +1,37 @@
+# A release is cut by pushing an annotated tag: its message is the release note,
+# so the wording is fixed at the point the tag is made rather than edited after
+# publication.
+name: release
+
+on:
+  push:
+    tags: [v*]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Go reads the version it stamps into the binary out of the checkout,
+          # so the tag itself has to be fetched, not just the commit.
+          fetch-depth: 0
+      - uses: jdx/mise-action@v4
+      - run: git config --global init.defaultBranch main
+      - run: mise run test
+      - run: mise run lint
+      - run: mise run dist
+      # Signed provenance is what separates these archives from a build someone
+      # made on a laptop: it records the workflow and commit they came from.
+      - uses: actions/attest@v4
+        with:
+          subject-path: dist/*.tar.gz
+      - run: gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag --latest dist/*
+        env:
+          GH_TOKEN: ${{ github.token }}
