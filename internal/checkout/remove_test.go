@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/halkn/trepo/internal/checkout"
@@ -81,9 +82,11 @@ func TestRemoveRefusesTheMainCheckout(t *testing.T) {
 	}
 }
 
-// Without a way to say yes, a checkout that needs confirmation must survive,
-// and the error has to name the flag that would let it through.
-func TestRemoveWithoutAConfirmerRefusesAndSaysHow(t *testing.T) {
+// Without a way to say yes, a checkout that needs confirmation must survive.
+// That is not a failure of the command: the guards did their job, so it reports
+// as a skip, and the message has to carry the reason and the flag that would
+// let it through.
+func TestRemoveWithoutAConfirmerSkipsAndSaysWhy(t *testing.T) {
 	fixture := gittest.New(t)
 	wtPath := filepath.Join(filepath.Dir(fixture.Dir), "wt-dirty")
 	fixture.Git("worktree", "add", "-b", "dirty-one", wtPath)
@@ -93,8 +96,13 @@ func TestRemoveWithoutAConfirmerRefusesAndSaysHow(t *testing.T) {
 
 	target := find(t, list(t, fixture), wtPath)
 	err := remover(fixture).Remove(target, checkout.Base{Name: "main", Known: true})
-	if err == nil {
-		t.Fatal("Remove() dropped uncommitted work without asking")
+	if !errors.Is(err, checkout.ErrSkipped) {
+		t.Fatalf("Remove() = %v, want ErrSkipped", err)
+	}
+	for _, want := range []string{wtPath, "uncommitted", "--force"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Remove() = %q, want it to mention %q", err, want)
+		}
 	}
 	if _, statErr := os.Stat(wtPath); statErr != nil {
 		t.Errorf("worktree was removed anyway: %v", statErr)

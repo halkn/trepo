@@ -174,9 +174,16 @@ func (a *app) add(args []string) int {
 
 // remove deletes worktrees, asking before anything that cannot be undone.
 func (a *app) remove(args []string) int {
-	flags, query, code, ok := a.parse(args, spec{"force": false, "dry-run": false})
+	flags, query, code, ok := a.parse(args,
+		spec{"force": false, "dry-run": false, "no-confirm": false})
 	if !ok {
 		return code
+	}
+	// Two opposite answers to the same question, so there is no reading of the
+	// pair that is not a guess about work the user could lose.
+	if flags["force"] == "true" && flags["no-confirm"] == "true" {
+		return fail(a.stderr, errors.New(
+			"--force removes without asking and --no-confirm keeps whatever needs asking; pass one"))
 	}
 
 	all, err := a.checkouts()
@@ -205,8 +212,11 @@ func (a *app) remove(args []string) int {
 		DryRun: flags["dry-run"] == "true",
 	}
 	// A rehearsal asks nothing, because it does nothing there is anything to
-	// agree to.
-	if !rm.DryRun {
+	// agree to, and --no-confirm is the caller saying they cannot be asked.
+	// Either way the removals that would need an answer are skipped with their
+	// reason, which is what keeps the guards in place for a caller whose stdin
+	// belongs to something else.
+	if !rm.DryRun && flags["no-confirm"] != "true" {
 		rm.Confirm = a.confirmer()
 	}
 
@@ -216,7 +226,7 @@ func (a *app) remove(args []string) int {
 		base := checkout.ResolveBase(a.opts.Git, c.Repo.Root)
 		if err := rm.Remove(c, base); err != nil {
 			if errors.Is(err, checkout.ErrSkipped) {
-				fmt.Fprintf(a.stderr, "trepo: skipped %s\n", c.Path)
+				fmt.Fprintln(a.stderr, "trepo: "+oneline(err))
 				continue
 			}
 			fail(a.stderr, err)

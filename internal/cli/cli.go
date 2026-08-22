@@ -59,10 +59,13 @@ options:
   list   --json --repos --worktrees --here
   path   --repos
   add    --repo <query> --from <ref>
-  rm     --force --dry-run
+  rm     --force --dry-run --no-confirm
+
+--force removes what rm would otherwise ask about; --no-confirm keeps it and
+says why, for callers that cannot answer a question.
 
 For path, add and rm: finding nothing exits 1, and cancelling exits 130 —
-dismissing the picker or declining every removal.`
+dismissing the picker, or every removal being declined or kept.`
 
 // Run executes one command and returns the process exit status.
 func Run(args []string, stdout, stderr io.Writer, opts Options) int {
@@ -113,12 +116,16 @@ func Run(args []string, stdout, stderr io.Writer, opts Options) int {
 	}
 }
 
-// fail reports on stderr in a single line. Other tools embed trepo's message
-// in their own interfaces — an fzf header among them — where a newline or a
-// bracket would break the surrounding syntax.
-func fail(stderr io.Writer, err error) int {
+// oneline flattens a message so other tools can embed it in their own
+// interfaces — an fzf header among them — where a newline or a bracket would
+// break the surrounding syntax.
+func oneline(err error) string {
 	msg := strings.Join(strings.Fields(err.Error()), " ")
-	msg = strings.NewReplacer("(", "[", ")", "]").Replace(msg)
-	fmt.Fprintln(stderr, "trepo: "+msg)
+	return strings.NewReplacer("(", "[", ")", "]").Replace(msg)
+}
+
+// fail reports on stderr and gives the caller the error status.
+func fail(stderr io.Writer, err error) int {
+	fmt.Fprintln(stderr, "trepo: "+oneline(err))
 	return ExitError
 }

@@ -343,6 +343,92 @@ func TestRemoveDeletesAMergedWorktree(t *testing.T) {
 	}
 }
 
+// A rehearsal asks nothing, so it can only rehearse the removals that need no
+// answer. One that would need an answer is reported as kept, with the status
+// the real unattended run would end on rather than an error.
+func TestRemoveDryRunKeepsWhatWouldNeedAsking(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	_, added, _ := w.run("add", "feat/x")
+	path := strings.TrimSpace(added)
+	if err := os.WriteFile(filepath.Join(path, "scratch.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stderr := w.run("rm", "feat/x", "--dry-run")
+	if code != cli.ExitCancelled {
+		t.Fatalf("exit = %d, want %d; stderr = %s", code, cli.ExitCancelled, stderr)
+	}
+	if strings.Contains(stderr, "would remove") {
+		t.Errorf("dry run announced a removal that needs an answer first:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "uncommitted") {
+		t.Errorf("stderr %q does not say why the checkout was kept", stderr)
+	}
+}
+
+// The point of --no-confirm: a caller that cannot answer a question keeps the
+// guards instead of reaching for --force. Nothing was removed and nothing was
+// chosen, which is the same outcome as declining every removal.
+func TestRemoveNoConfirmKeepsWhatWouldNeedAsking(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	_, added, _ := w.run("add", "feat/x")
+	path := strings.TrimSpace(added)
+	if err := os.WriteFile(filepath.Join(path, "scratch.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := w.run("rm", "feat/x", "--no-confirm")
+	if code != cli.ExitCancelled {
+		t.Fatalf("exit = %d, want %d; stderr = %s", code, cli.ExitCancelled, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "uncommitted") || !strings.Contains(stderr, path) {
+		t.Errorf("stderr %q does not say which checkout was kept and why", stderr)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("--no-confirm removed a worktree with uncommitted changes: %v", err)
+	}
+}
+
+func TestRemoveNoConfirmStillRemovesWhatNeedsNoAsking(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	_, added, _ := w.run("add", "feat/x")
+	path := strings.TrimSpace(added)
+
+	code, _, stderr := w.run("rm", "feat/x", "--no-confirm")
+	if code != cli.ExitOK {
+		t.Fatalf("exit = %d, want %d; stderr = %s", code, cli.ExitOK, stderr)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("worktree survived: %v", err)
+	}
+}
+
+// One flag removes without asking, the other keeps whatever would need asking.
+// Choosing either for the caller would be a guess about work they could lose.
+func TestRemoveRejectsForceWithNoConfirm(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	_, added, _ := w.run("add", "feat/x")
+	path := strings.TrimSpace(added)
+
+	code, _, stderr := w.run("rm", "feat/x", "--force", "--no-confirm")
+	if code != cli.ExitError {
+		t.Fatalf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if !strings.Contains(stderr, "--force") || !strings.Contains(stderr, "--no-confirm") {
+		t.Errorf("stderr %q does not name both options", stderr)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("the rejected run removed the worktree anyway: %v", err)
+	}
+}
+
 // The main checkout is never a removal target, so it must not even be offered.
 func TestRemoveNeverTargetsTheMainCheckout(t *testing.T) {
 	w := newWorld(t)

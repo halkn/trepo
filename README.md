@@ -43,9 +43,9 @@ fails in zsh.
 `list` never asks a question and exits 0 even with no results, which makes it
 usable as a data source; `--json` prints a single array.
 
-Exit statuses: `0` success, `1` nothing matched, `2` an error, `130` the
-choice was cancelled — the picker was dismissed, or every removal `rm`
-offered was declined.
+Exit statuses: `0` success, `1` nothing matched, `2` an error, `130` nothing
+was chosen — the picker was dismissed, or every removal `rm` offered was
+declined or kept.
 
 ## Layout
 
@@ -143,9 +143,29 @@ branch does not already contain, or is protected. A detached worktree counts:
 with no branch pointing at them, its commits become unreachable once it is
 gone.
 
-`--force` skips the asking. `--dry-run` runs the guards and reports what would
-happen without removing anything or asking anything, so a refusal shows up as a
-refusal rather than as a removal that would have gone ahead.
+`--force` skips the asking. `--no-confirm` does the opposite: it removes what
+needs no question and keeps the rest, naming each kept checkout and its reason
+on stderr. It is for callers with no way to answer — a shell script, or a key
+binding inside `fzf`, where stdin belongs to something else — so that the
+alternative to an unanswerable prompt is not `--force`. The two contradict each
+other and cannot be passed together.
+
+```sh
+trepo rm --no-confirm "$path"   # 0 something was removed, 130 nothing was
+```
+
+The status reports whether anything was removed, so a run that removes one
+checkout and keeps another still exits `0`; which ones were kept is on stderr.
+`--no-confirm` also silences the confirmation, not the choice of target:
+several matches still open the picker. For both reasons a caller that cannot
+answer should pass a query that can only match one checkout, such as a full
+path.
+
+`--dry-run` runs the guards and reports what would happen without removing
+anything or asking anything, so a refusal shows up as a refusal rather than as
+a removal that would have gone ahead. Asking nothing means it can only rehearse
+the removals that need no answer: it reports the rest as kept, and ends on the
+same status an unattended run would.
 
 A merged branch is deleted along with its worktree, with `git branch -d` only —
 a branch git will not delete on its own terms is holding something trepo will
