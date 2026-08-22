@@ -57,9 +57,12 @@ usage:
 
 options:
   list   --json --repos --worktrees --here
-  path   --repos
+  path   --repos --here
   add    --repo <query> --from <ref>
-  rm     --force --dry-run --no-confirm
+  rm     --force --dry-run --no-confirm --here
+
+--here narrows to the repository the working directory belongs to, whichever
+of its checkouts you are standing in.
 
 --force removes what rm would otherwise ask about; --no-confirm keeps it and
 says why, for callers that cannot answer a question.

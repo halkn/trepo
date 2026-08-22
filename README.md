@@ -43,6 +43,17 @@ fails in zsh.
 `list` never asks a question and exits 0 even with no results, which makes it
 usable as a data source; `--json` prints a single array.
 
+`list`, `path` and `rm` take `--here`, which narrows to the repository the
+working directory belongs to — standing in one of its worktrees counts, since
+what it narrows to is the repository rather than the checkout. Outside a
+repository it has nothing to narrow to and the command says so rather than
+answering with nothing.
+
+```sh
+p=$(trepo path --here) && cd -- "$p"      # back to the repository's own checkout
+trepo rm --here feat/login                # its worktrees only
+```
+
 Exit statuses: `0` success, `1` nothing matched, `2` an error, `130` nothing
 was chosen — the picker was dismissed, or every removal `rm` offered was
 declined or kept.

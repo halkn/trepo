@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/halkn/trepo/internal/checkout"
 	"github.com/halkn/trepo/internal/cli"
 	"github.com/halkn/trepo/internal/git"
 	"github.com/halkn/trepo/internal/gittest"
@@ -641,6 +642,87 @@ func TestListHereOutsideARepositoryIsAnError(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "--here") {
 		t.Errorf("stderr %q does not explain the refusal", stderr)
+	}
+}
+
+// Narrowing to the repository at hand is the common case for both commands, and
+// the query that would express it otherwise is the repository slug the caller
+// would have to go and find first.
+func TestPathHereNarrowsToTheRepositoryYouAreIn(t *testing.T) {
+	w := newWorld(t)
+	alpha := w.addRepo("github.com", "halkn", "alpha")
+	w.addRepo("github.com", "halkn", "beta")
+	w.cwd = alpha
+
+	code, stdout, stderr := w.run("path", "--here")
+	if code != cli.ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	if got := strings.TrimSpace(stdout); !checkout.SamePath(got, alpha) {
+		t.Errorf("path = %q, want %q", got, alpha)
+	}
+}
+
+// The repository is what --here narrows to, not the checkout: standing in a
+// worktree still means the repository that worktree belongs to.
+func TestPathHereFromInsideAWorktreeMeansItsRepository(t *testing.T) {
+	w := newWorld(t)
+	alpha := w.addRepo("github.com", "halkn", "alpha")
+	w.addRepo("github.com", "halkn", "beta")
+	w.cwd = alpha
+	_, added, _ := w.run("add", "feat/x")
+	w.cwd = strings.TrimSpace(added)
+
+	code, stdout, stderr := w.run("path", "--here", "--repos")
+	if code != cli.ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	if got := strings.TrimSpace(stdout); !checkout.SamePath(got, alpha) {
+		t.Errorf("path = %q, want %q", got, alpha)
+	}
+}
+
+func TestRemoveHereNarrowsToTheRepositoryYouAreIn(t *testing.T) {
+	w := newWorld(t)
+	alpha := w.addRepo("github.com", "halkn", "alpha")
+	beta := w.addRepo("github.com", "halkn", "beta")
+
+	w.cwd = beta
+	_, added, _ := w.run("add", "feat/x")
+	kept := strings.TrimSpace(added)
+	w.cwd = alpha
+	_, added, _ = w.run("add", "feat/x")
+	target := strings.TrimSpace(added)
+
+	code, _, stderr := w.run("rm", "feat/x", "--here")
+	if code != cli.ExitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("the worktree of the repository at hand survived: %v", err)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Errorf("--here reached into another repository: %v", err)
+	}
+}
+
+// Outside a repository the option cannot mean anything, and both commands have
+// to say so the same way list does rather than answering with nothing.
+func TestHereOutsideARepositoryIsTheSameErrorEverywhere(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("github.com", "halkn", "alpha")
+
+	for _, args := range [][]string{{"list", "--here"}, {"path", "--here"}, {"rm", "--here"}} {
+		code, stdout, stderr := w.run(args...)
+		if code != cli.ExitError {
+			t.Errorf("%v: exit = %d, want %d", args, code, cli.ExitError)
+		}
+		if stdout != "" {
+			t.Errorf("%v: stdout = %q, want empty", args, stdout)
+		}
+		if !strings.Contains(stderr, "--here") {
+			t.Errorf("%v: stderr %q does not explain the refusal", args, stderr)
+		}
 	}
 }
 
