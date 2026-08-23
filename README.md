@@ -20,7 +20,7 @@ several candidates, and everything else works without it.
 
 ## Commands
 
-```
+```text
 trepo get <repo>                     clone a repository into the trepo root
 trepo list [<query>...]              list checkouts
 trepo path [<query>...]              print the path of one checkout
@@ -65,7 +65,7 @@ declined or kept.
 Repositories go under the trepo root by their URL, so the same repository
 always lands in the same place no matter which spelling was cloned:
 
-```
+```text
 ~/repos/github.com/halkn/trepo
 ~/repos/dev.azure.com/org/proj/service
 ```
@@ -73,7 +73,7 @@ always lands in the same place no matter which spelling was cloned:
 Worktrees go under their own root, named by a template. Branch slashes stay
 slashes, so `feat/x` and `feat-x` are different directories:
 
-```
+```text
 ~/.local/share/trepo/worktrees/halkn/trepo/feat/x
 ```
 

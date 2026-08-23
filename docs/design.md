@@ -4,6 +4,24 @@ Why trepo is shaped the way it is. `README.md` says what the commands do; this
 file says which decisions are load-bearing, so a change can be judged against
 them instead of against the current code.
 
+A **checkout** is the one concept everything else hangs off: a repository's main
+checkout, or one of its worktrees. `checkout.Checkout` in `internal/checkout`
+carries both, and `Kind` (`repo` or `worktree`) is an attribute of a checkout
+rather than a type of its own.
+
+Where each decision lives in the code:
+
+| decision | code |
+| --- | --- |
+| what a checkout is, how one is listed and flagged | `internal/checkout` (`checkout.go`, `list.go`, `all.go`) |
+| whether a removal is allowed, and what it asks first | `internal/checkout/guard.go`, `remove.go`, `reclaim.go` |
+| running git and parsing its porcelain output | `internal/git` |
+| subcommands, flags, output and exit status | `internal/cli` |
+| layout of a clone, and finding existing ones | `internal/repo` |
+
+Sections below marked **(direction)** are not fully reflected in the code yet;
+the issue that closes the gap is named.
+
 ## Responsibilities
 
 trepo resolves. Choosing between candidates and moving into one is the caller's
@@ -22,9 +40,14 @@ The boundary follows from having several callers of the same answers. A
 judgement duplicated across callers drifts; a judgement inside trepo is written
 once and covered by unit tests.
 
-So: no domain type describes a prompt or a picker, and no caller reimplements a
-guard. When a caller needs something to draw a row, the fix is to add it to the
-output, not to let the caller run git.
+So: no caller reimplements a guard, and when a caller needs something to draw a
+row, the fix is to add it to the output rather than to let the caller run git.
+
+**(direction, #12)** The interactive half is still inside trepo: `internal/picker`
+runs fzf when a query matches several checkouts, and `rm` asks for confirmation
+by opening `/dev/tty`. Both move out to the callers; the judgement they act on
+(`checkout.Guard`) stays. A change that adds interaction to trepo goes the wrong
+way even though it matches the code as it stands.
 
 ## Command contract
 
@@ -44,10 +67,11 @@ output, not to let the caller run git.
 - **Errors on stderr are one line, with no newline and no `()`.** They get
   embedded in other tools' UI, such as an fzf `change-header(...)` action, which
   breaks on both.
-- **Commands do not interact.** A command that cannot decide reports what it
-  needs and exits; it does not open a prompt. stdin belongs to whatever invoked
-  trepo — after fzf has run, or inside an fzf `transform`, there is no stdin to
-  read.
+- **Commands do not interact (direction, #12).** A command that cannot decide
+  reports what it needs and exits, rather than opening a prompt. stdin belongs
+  to whatever invoked trepo — after fzf has run, or inside an fzf `transform`,
+  there is nothing to read from it, which is why `rm --no-confirm` exists today
+  and why the prompt itself reads `/dev/tty` instead of stdin.
 
 ## Modes
 
@@ -69,6 +93,12 @@ token affects acquisition and review, not the ability to reach a checkout.
 The shared part is the shape of a row and of a preview, so a caller renders all
 three the same way. That is a rendering contract, not a merged mode.
 
+Only development exists today, as `list` / `path` / `add` over local checkouts;
+`get` clones a repository whose URL the caller already knows. Listing
+repositories that are not local yet is #16, and PR / issue candidates are #17.
+The mode boundary is what those two have to respect, not something already
+encoded in the command set.
+
 ## Listing
 
 **A repository and its worktrees appear in one list, and the main checkout is
@@ -77,9 +107,10 @@ is a candidate like any other. `kind` is an attribute of a row, not a reason to
 have a second command.
 
 **The order is part of the spec:** by repository path, main checkout first
-within a repository, then branch name. Enumeration runs concurrently across
-repositories, so without a fixed order the output is non-deterministic — tests
-cannot pin it and the picker's cursor lands somewhere different each run.
+within a repository, then branch name (`checkout.Sort`). Enumeration runs
+concurrently across repositories, so without a fixed order the output is
+non-deterministic — tests cannot pin it and the picker's cursor lands somewhere
+different each run.
 
 **The repository row is not deduplicated away when it has worktrees.** It is
 where the default branch is checked out; suppressing it would make the one
@@ -88,6 +119,14 @@ checkout that always exists the one that cannot be selected.
 The human-readable form keeps flags in their own column, so a branch named
 `fix/main-nav` cannot be mistaken for the `main` marker by a caller matching on
 text.
+
+**A checkout's state is one vocabulary, computed once.** `checkout.Lister`
+fills `Flags` (`dirty`, `merged`, `gone`, `locked`, `protected`, `current`, …),
+and the listing, `status` and the removal guards all read that same value —
+`checkout.Guard` runs no git of its own. A new condition is a flag, not a
+second query issued from whichever command happens to need it, because two
+places asking git the same question is how a listing and a guard come to
+disagree about the checkout in front of them.
 
 ## State
 
@@ -103,10 +142,10 @@ from the enumeration rather than from `git -C <path>`: a worktree whose
 directory is gone cannot answer for itself, and that is precisely the case
 worth reclaiming.
 
-The same rule applies to anything else worth remembering about a checkout, such
-as the fact that it came from a review: it has to survive a move and a rename,
-so it belongs in git's own storage for that repository, not in a side file
-keyed by path.
+The same rule constrains anything else worth remembering about a checkout, such
+as the fact that it came from a review (#17): whatever holds it has to survive
+the directory being moved and the branch being renamed, which rules out a side
+file keyed by path. Which store that ends up being is open.
 
 Configuration scope follows from the same idea. `trepo.root`,
 `trepo.worktreeRoot` and `trepo.defaultHost` decide which checkouts exist at
@@ -143,12 +182,12 @@ exists, and it cannot be added on top.
 cleaner list and removes the checkout containing the default branch from the
 candidates. See [Listing](#listing).
 
-**A port to Rust, or staying in zsh.** The zsh implementation this replaced
-could not be tested where it mattered — the flag computation and the removal
-guards were the untested part, and they are the part that loses work when
-wrong. Rust would buy nothing here: the work is process orchestration around
-git, the standard library covers it with no dependencies, and `go install`
-plus a tagged release is the whole distribution story.
+**A port to Rust, or staying in zsh.** trepo takes over from a pair of zsh
+functions that could not be tested where it mattered: the flag computation and
+the removal guards were the untested part, and they are the part that loses
+work when it is wrong. Rust would buy nothing here — the work is process
+orchestration around git, the standard library covers it with no dependencies,
+and `go install` plus a tagged release is the whole distribution story.
 
 ## Open questions
 
