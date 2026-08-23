@@ -96,8 +96,68 @@ func TestListSpansRepositories(t *testing.T) {
 		t.Fatalf("listed %d checkouts, want 2:\n%s", len(lines), stdout)
 	}
 	for _, line := range lines {
-		if n := len(strings.Split(line, "\t")); n != 4 {
-			t.Errorf("line %q has %d columns, want 4", line, n)
+		if n := len(strings.Split(line, "\t")); n != 5 {
+			t.Errorf("line %q has %d columns, want 5", line, n)
+		}
+	}
+}
+
+// kind is what tells a caller whether Enter should open this checkout or make a
+// new one for it, so it has to be readable without asking for --json.
+func TestListPrintsKindAsAColumn(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	w.worktreeWith("feat/x", nil)
+
+	_, stdout, _ := w.run("list")
+	kinds := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		kinds[strings.Split(line, "\t")[1]] = true
+	}
+	for _, want := range []string{"repo", "worktree"} {
+		if !kinds[want] {
+			t.Errorf("no row has kind %q:\n%s", want, stdout)
+		}
+	}
+}
+
+// Columns are values, not a rendering. A caller splitting on tabs would have to
+// strip the padding off every field, and the width does not survive a branch
+// name longer than it anyway, so the alignment it buys is not real.
+func TestListDoesNotPadItsColumns(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	w.worktreeWith("feat/a-branch-name-longer-than-any-fixed-column-width", nil)
+
+	_, stdout, _ := w.run("list")
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		for i, field := range strings.Split(line, "\t") {
+			if field != strings.TrimSpace(field) {
+				t.Errorf("column %d of %q carries padding", i+1, line)
+			}
+		}
+	}
+}
+
+// Enumeration runs concurrently across repositories, so without a fixed order
+// the output moves between runs: tests cannot pin it and a picker's cursor
+// lands somewhere different each time.
+func TestListOutputIsIdenticalAcrossRuns(t *testing.T) {
+	w := newWorld(t)
+	for _, name := range []string{"alpha", "beta", "gamma", "delta", "epsilon"} {
+		w.cwd = w.addRepo("github.com", "halkn", name)
+		w.worktreeWith("feat/x", nil)
+		w.worktreeWith("feat/y", nil)
+	}
+
+	_, first, _ := w.run("list")
+	if countLines(first) != 15 {
+		t.Fatalf("listed %d checkouts, want 15:\n%s", countLines(first), first)
+	}
+	for i := 0; i < 5; i++ {
+		_, again, _ := w.run("list")
+		if again != first {
+			t.Fatalf("run %d differs:\n%s\n---\n%s", i+2, first, again)
 		}
 	}
 }

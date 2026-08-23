@@ -43,7 +43,20 @@ resolved stdout is empty, and `cd` with no argument goes home in bash and fails
 in zsh.
 
 `list` never fails on emptiness and exits 0 with no results, which makes it
-usable as a data source; `--json` prints a single array.
+usable as a data source. It prints one tab-separated row per checkout —
+repository, kind, branch, flags, path — with the values as they are and no
+padding, so widths are the caller's to choose. `--json` prints a single array
+with the same information plus the host, owner and name split out.
+
+```sh
+$ trepo list | column -t -s $'\t'
+halkn/api  repo      main    current,dirty  ~/repos/github.com/halkn/api
+halkn/api  worktree  feat/x  merged         ~/worktrees/halkn/api/feat/x
+```
+
+`kind` is what tells a caller whether selecting a row should open that checkout
+or make a new one for it, so the path stays last and columns may grow in front
+of it: `${row##*$'\t'}` keeps working.
 
 `path` answers with one checkout or with nothing. A query that matches several
 exits `3` and says how many, rather than picking one:

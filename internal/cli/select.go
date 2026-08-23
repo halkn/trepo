@@ -164,9 +164,20 @@ func describe(query []string) string {
 	return strings.Join(query, " ")
 }
 
-// row is the human-readable form of a checkout: repository, branch, flags.
-// Flags get a column of their own so a filter matches them as a field; a
-// branch called fix/main-nav must not read as the main marker.
+// row is the tab-separated form of a checkout: repository, kind, branch,
+// flags. The path follows it, last, so a caller can take it with ${row##*<tab>}
+// however many columns grow in front of it.
+//
+// Each column is a value rather than a rendering. Widths belong to whatever
+// draws the row — it knows the terminal and the font — and a fixed width here
+// would be both stripped by every caller that splits on tabs and overrun by the
+// first branch name longer than it.
+//
+// kind is its own column rather than a flag. Flags are the state a checkout is
+// in, computed per listing and read by the removal guards; kind is what the
+// checkout is, and mixing the two would put something the guards cannot act on
+// into the vocabulary they read. It also cannot be derived from the rest: a
+// branch called fix/main-nav must not read as the main checkout.
 func row(c checkout.Checkout) []string {
 	branch := c.Branch
 	if branch == "" {
@@ -180,12 +191,5 @@ func row(c checkout.Checkout) []string {
 		}
 		flags = strings.Join(names, ",")
 	}
-	return []string{pad(c.Repo.Slug(), 28), pad(branch, 28), flags}
-}
-
-func pad(s string, width int) string {
-	if len(s) >= width {
-		return s
-	}
-	return s + strings.Repeat(" ", width-len(s))
+	return []string{c.Repo.Slug(), string(c.Kind), branch, flags}
 }
