@@ -16,8 +16,7 @@ go install github.com/halkn/trepo/cmd/trepo@latest
 ```
 
 Requires git 2.36 or newer, and nothing else. trepo runs no picker and asks no
-question, so choosing between candidates is a wrapper's job — build one over
-`trepo list`, with `trepo status <path>` as its preview.
+question; see [Choosing between checkouts](#choosing-between-checkouts).
 
 ## Commands
 
@@ -72,18 +71,11 @@ is dismissed.
 
 ## Choosing between checkouts
 
-trepo resolves; a wrapper chooses. `list` prints one tab-separated row per
-checkout — repository, branch, flags, path — and `status <path>` describes one,
-which is what a preview window renders:
-
-```sh
-cdw() {
-  local row
-  row=$(trepo list | fzf --delimiter=$'\t' --with-nth=1,2,3 \
-        --preview='trepo status {4}') || return $?   # 130 when dismissed
-  cd -- "${row##*$'\t'}"
-}
-```
+trepo resolves; choosing between what it resolved to, and moving there, is the
+caller's. It runs no picker, so a wrapper builds one out of three pieces:
+`list` for the candidates, `status <path>` for a description of one of them,
+and `130` left unused so the wrapper can pass a dismissed picker straight
+through.
 
 ## Layout
 
