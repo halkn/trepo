@@ -64,6 +64,20 @@ p=$(trepo path --here) && cd -- "$p"      # back to the repository's own checkou
 trepo rm --here feat/login                # its worktrees only
 ```
 
+`list` and `path` take `--cwd <dir>`, which judges "where you are" by `<dir>`
+rather than by where trepo was run, and `path --current` answers with the one
+checkout holding it. Any directory below a checkout works, so a caller can pass
+the working directory of a terminal pane straight through:
+
+```sh
+trepo path --current --cwd "$pane_cwd"    # the checkout that directory is in
+trepo status "$pane_cwd"                  # and a description of it
+```
+
+`rm` does not take `--cwd`. The working directory is what marks the checkout
+`rm` refuses to remove, so a caller able to move that mark could delete the
+checkout you are standing in.
+
 Exit statuses: `0` success, `1` nothing matched, `2` an error, `3` nothing was
 decided — several checkouts matched one query, or `rm` kept every target. `130`
 is left free for the caller, since that is what `fzf` exits with when a picker
@@ -72,10 +86,12 @@ is dismissed.
 ## Choosing between checkouts
 
 trepo resolves; choosing between what it resolved to, and moving there, is the
-caller's. It runs no picker, so a wrapper builds one out of three pieces:
-`list` for the candidates, `status <path>` for a description of one of them,
-and `130` left unused so the wrapper can pass a dismissed picker straight
-through.
+caller's. It runs no picker, so a wrapper builds one out of four pieces: `list`
+for the candidates, `status <path>` for a description of one of them, `path
+--current --cwd <dir>` for the checkout a directory is in, and `130` left
+unused so the wrapper can pass a dismissed picker straight through.
+
+None of those need the caller to run git.
 
 ## Layout
 
