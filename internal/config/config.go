@@ -78,8 +78,18 @@ func LoadRepo(r git.Runner, dir string) RepoConfig {
 	if v, ok, _ := scoped(r, dir, "trepo.worktreeTemplate"); ok {
 		rc.WorktreeTemplate = v
 	}
-	rc.Protected = scopedAll(r, dir, "trepo.protected")
+	rc.Protected = Protected(r, dir)
 	return rc
+}
+
+// Protected reads only the patterns that mark a checkout as another tool's.
+//
+// Listing needs these and nothing else a repository can override, and it reads
+// them once per repository enumerated. Reading the whole of RepoConfig there
+// would spend a git process apiece on the worktree template, which only add
+// ever looks at.
+func Protected(r git.Runner, dir string) []string {
+	return scopedAll(r, dir, "trepo.protected")
 }
 
 // A worktree can hold uncommitted work, so its default home is the data

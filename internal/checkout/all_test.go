@@ -2,6 +2,8 @@ package checkout_test
 
 import (
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/halkn/trepo/internal/checkout"
@@ -84,4 +86,37 @@ func TestAllAppliesPerRepositoryProtectedPatterns(t *testing.T) {
 	if !find(t, got, wt).Has(checkout.FlagProtected) {
 		t.Errorf("flags = %v, want protected", find(t, got, wt).Flags)
 	}
+}
+
+// Listing needs the protected patterns of a repository and nothing else from
+// its configuration. Reading the worktree template as well spends one git
+// process per repository on an answer only add ever looks at.
+func TestAllDoesNotReadTheWorktreeTemplate(t *testing.T) {
+	fixture := gittest.New(t)
+	spy := &countingRunner{inner: git.Exec{Env: fixture.Env()}}
+	f := checkout.Finder{Git: spy, Cwd: "/elsewhere"}
+
+	if _, errs := f.All([]repo.Repo{
+		{Host: "github.com", Owner: "o", Name: "alpha", Root: fixture.Dir},
+	}); len(errs) != 0 {
+		t.Fatalf("errors: %v", errs)
+	}
+	for _, args := range spy.calls {
+		if strings.Contains(strings.Join(args, " "), "worktreeTemplate") {
+			t.Errorf("listing read the worktree template: %v", args)
+		}
+	}
+}
+
+type countingRunner struct {
+	inner git.Runner
+	mu    sync.Mutex
+	calls [][]string
+}
+
+func (c *countingRunner) Run(dir string, args ...string) ([]byte, error) {
+	c.mu.Lock()
+	c.calls = append(c.calls, args)
+	c.mu.Unlock()
+	return c.inner.Run(dir, args...)
 }
