@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Git の repository と worktree を **checkout** という 1 つの概念にまとめる Go 製 CLI。並列開発で 1 repository に複数 checkout があるのを通常の状態として扱う。利用者向けの説明は `README.md`。
+Git の repository と worktree を **checkout** という 1 つの概念にまとめる Go 製 CLI。並列開発で 1 repository に複数 checkout があるのを通常の状態として扱う。利用者向けの説明は `README.md`、設計判断とその理由は `docs/design.md`。`docs/design.md` にはあるべき姿だけを書く（現状との差分・issue 番号・経緯は書かない）。README には結論を置き、理由は `docs/design.md` に寄せる。
 
 ## Commands
 

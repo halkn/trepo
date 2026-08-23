@@ -7,6 +7,8 @@ its worktrees. With several agents working in parallel, one repository having
 several checkouts is the normal state, so choosing where to work should not
 start by deciding whether that place is a clone or a worktree.
 
+`docs/design.md` records the decisions behind this and what they rule out.
+
 ## Install
 
 ```sh
@@ -18,7 +20,7 @@ several candidates, and everything else works without it.
 
 ## Commands
 
-```
+```text
 trepo get <repo>                     clone a repository into the trepo root
 trepo list [<query>...]              list checkouts
 trepo path [<query>...]              print the path of one checkout
@@ -63,7 +65,7 @@ declined or kept.
 Repositories go under the trepo root by their URL, so the same repository
 always lands in the same place no matter which spelling was cloned:
 
-```
+```text
 ~/repos/github.com/halkn/trepo
 ~/repos/dev.azure.com/org/proj/service
 ```
@@ -71,7 +73,7 @@ always lands in the same place no matter which spelling was cloned:
 Worktrees go under their own root, named by a template. Branch slashes stay
 slashes, so `feat/x` and `feat-x` are different directories:
 
-```
+```text
 ~/.local/share/trepo/worktrees/halkn/trepo/feat/x
 ```
 
@@ -88,8 +90,8 @@ Settings live in git config, under `trepo.*`.
 | `trepo.protected` | none | any scope, repeatable |
 
 The three keys that decide which checkouts exist at all are read from the
-global and system scopes only. A repository-local override would make the same
-`trepo list` answer differently depending on the directory it ran in.
+global and system scopes only, so that `trepo list` answers the same in every
+directory (`docs/design.md`).
 
 ```sh
 git config --global trepo.root ~/src
@@ -157,9 +159,8 @@ gone.
 `--force` skips the asking. `--no-confirm` does the opposite: it removes what
 needs no question and keeps the rest, naming each kept checkout and its reason
 on stderr. It is for callers with no way to answer — a shell script, or a key
-binding inside `fzf`, where stdin belongs to something else — so that the
-alternative to an unanswerable prompt is not `--force`. The two contradict each
-other and cannot be passed together.
+binding inside `fzf`, where stdin belongs to something else. The two contradict
+each other and cannot be passed together.
 
 ```sh
 trepo rm --no-confirm "$path"   # 0 something was removed, 130 nothing was
@@ -178,9 +179,8 @@ a removal that would have gone ahead. Asking nothing means it can only rehearse
 the removals that need no answer: it reports the rest as kept, and ends on the
 same status an unattended run would.
 
-A merged branch is deleted along with its worktree, with `git branch -d` only —
-a branch git will not delete on its own terms is holding something trepo will
-not discard.
+A merged branch is deleted along with its worktree, with `git branch -d` only,
+so a branch git refuses to delete stays.
 
 ## Reclaiming finished worktrees
 
