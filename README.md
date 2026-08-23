@@ -68,9 +68,10 @@ trepo: 2 checkouts match alp; narrow the query or choose one from trepo list
 
 `list`, `path` and `rm` take `--here`, which narrows to the repository the
 working directory belongs to — standing in one of its worktrees counts, since
-what it narrows to is the repository rather than the checkout. Outside a
-repository it has nothing to narrow to and the command says so rather than
-answering with nothing.
+what it narrows to is the repository rather than the checkout. Where it has
+nothing to narrow to — outside any repository, or inside one that is not below
+the trepo root — the command says so and exits `2` rather than answering with
+nothing, since an empty answer would claim the repository holds no checkouts.
 
 ```sh
 p=$(trepo path --here) && cd -- "$p"      # back to the repository's own checkout

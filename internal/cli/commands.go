@@ -78,10 +78,11 @@ func (a *app) list(args []string) int {
 	if err != nil {
 		return fail(a.stderr, err)
 	}
-	cs, code = a.here(filter(cs, query), flags)
+	cs, code = a.here(cs, flags)
 	if code != ExitOK {
 		return code
 	}
+	cs = filter(cs, query)
 
 	var kept []checkout.Checkout
 	for _, c := range cs {
@@ -119,11 +120,11 @@ func (a *app) path(args []string) int {
 	if err != nil {
 		return fail(a.stderr, err)
 	}
-	cs, code = a.here(filter(cs, query), flags)
+	cs, code = a.here(cs, flags)
 	if code != ExitOK {
 		return code
 	}
-	cs = current(cs, flags, a.opts.Cwd)
+	cs = current(filter(cs, query), flags, a.opts.Cwd)
 	if flags["repos"] == "true" {
 		var kept []checkout.Checkout
 		for _, c := range cs {
@@ -194,10 +195,11 @@ func (a *app) remove(args []string) int {
 		return fail(a.stderr, err)
 	}
 
-	candidates, code := a.here(filter(all, query), flags)
+	candidates, code := a.here(all, flags)
 	if code != ExitOK {
 		return code
 	}
+	candidates = filter(candidates, query)
 	// The main checkout can never be a target, so offering it would only make
 	// the list longer and the refusal more likely.
 	var removable []checkout.Checkout

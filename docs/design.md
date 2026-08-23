@@ -66,7 +66,11 @@ trepo's.
   somewhere else entirely.
 - **`list` never asks and never fails on emptiness.** It is a data source, so 0
   results is exit 0 with no output. `path` and `rm` are selections, so 0 results
-  is exit 1.
+  is exit 1. That is about the answer being empty, not about the question being
+  unanswerable: an option that cannot mean anything where it was used — `--here`
+  outside any repository trepo lists — is reported and fails, in `list` as much
+  as anywhere else. Returning nothing there would say the repository holds no
+  checkouts, which is not what happened.
 - **A command that resolves to several candidates does not pick one.** It says
   how many matched and stops. Printing the first would hand back a path nobody
   asked for, and printing all of them would break the one-path contract; the

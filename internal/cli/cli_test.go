@@ -1096,3 +1096,84 @@ func TestPathCurrentOutsideEveryCheckoutExitsOne(t *testing.T) {
 		t.Errorf("stdout = %q, want empty", stdout)
 	}
 }
+
+// managedRepo puts a repository somewhere trepo does not look, which is where
+// a clone made before trepo, or by hand, ends up.
+func (w *world) repoOutsideTheRoot(name string) string {
+	w.t.Helper()
+	dir := filepath.Join(w.t.TempDir(), name)
+	if _, err := w.fixture.TryGitIn(filepath.Dir(dir), "init", "--initial-branch=main", name); err != nil {
+		w.t.Fatal(err)
+	}
+	if _, err := w.fixture.TryGitIn(dir, "commit", "--allow-empty", "-m", "add: initial"); err != nil {
+		w.t.Fatal(err)
+	}
+	return dir
+}
+
+// A repository trepo does not list is not a repository with no checkouts.
+// Reporting "no matching checkout" would tell a caller this repository holds
+// nothing, when the truth is that trepo is not looking where it lives.
+func TestHereOutsideTheTrepoRootSaysSo(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("github.com", "halkn", "alpha")
+	w.cwd = w.repoOutsideTheRoot("loose")
+
+	for _, args := range [][]string{{"list", "--here"}, {"path", "--here"}, {"rm", "--here"}} {
+		code, stdout, stderr := w.run(args...)
+		if code != cli.ExitError {
+			t.Errorf("%v: exit = %d, want %d", args, code, cli.ExitError)
+		}
+		if stdout != "" {
+			t.Errorf("%v: stdout = %q, want empty", args, stdout)
+		}
+		if !strings.Contains(stderr, "--here") || !strings.Contains(stderr, "root") {
+			t.Errorf("%v: stderr %q does not say the repository is outside the trepo root", args, stderr)
+		}
+		if countLines(stderr) != 1 {
+			t.Errorf("%v: stderr has %d lines, want one:\n%s", args, countLines(stderr), stderr)
+		}
+	}
+}
+
+// Inside a repository trepo does list, a query that matches nothing is still an
+// ordinary no-match. The two must not be confused: --here narrows to the
+// repository, and the query narrows within it.
+func TestHereWithAQueryThatMatchesNothingIsStillNoMatch(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+
+	code, stdout, stderr := w.run("path", "--here", "nothing-like-this")
+	if code != cli.ExitNoMatch {
+		t.Errorf("exit = %d, want %d (stderr = %s)", code, cli.ExitNoMatch, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+}
+
+// A repository below the trepo root but not at the depth the layout puts one at
+// is not enumerated either, so --here has nothing to narrow to there as well.
+func TestHereInsideTheRootButOutsideTheLayoutSaysSo(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("github.com", "halkn", "alpha")
+	loose := filepath.Join(w.root, "loose")
+	if err := os.MkdirAll(w.root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.fixture.TryGitIn(w.root, "init", "--initial-branch=main", "loose"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.fixture.TryGitIn(loose, "commit", "--allow-empty", "-m", "add: initial"); err != nil {
+		t.Fatal(err)
+	}
+	w.cwd = loose
+
+	code, _, stderr := w.run("path", "--here")
+	if code != cli.ExitError {
+		t.Errorf("exit = %d, want %d (stderr = %s)", code, cli.ExitError, stderr)
+	}
+	if !strings.Contains(stderr, "--here") {
+		t.Errorf("stderr %q does not explain the refusal", stderr)
+	}
+}

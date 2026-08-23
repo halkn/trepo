@@ -74,10 +74,17 @@ func filter(cs []checkout.Checkout, query []string) []checkout.Checkout {
 //
 // What it narrows to is the repository, not the checkout, so standing in a
 // worktree still means every checkout of the repository that worktree is part
-// of. The lookup happens once rather than per checkout, and failing to find a
-// repository is reported rather than treated as "nothing is here": outside a
-// repository the filter has no meaning, and an empty answer would read as a
-// repository with no other checkouts.
+// of. The lookup happens once rather than per checkout.
+//
+// Every way of having nothing to narrow to is reported rather than returned as
+// an empty list, and they are told apart because they lead somewhere different:
+// outside a repository there is nothing to stand in, below the trepo root there
+// is a repository trepo was never going to look at, and inside the root there
+// can still be one the layout does not reach. An empty answer would read as a
+// repository holding no checkouts, which is the one thing none of them mean.
+//
+// It runs before the query narrows anything, so that a query matching nothing
+// stays an ordinary no-match rather than becoming one of these refusals.
 func (a *app) here(cs []checkout.Checkout, flags map[string]string) ([]checkout.Checkout, int) {
 	if flags["here"] != "true" {
 		return cs, ExitOK
@@ -94,7 +101,27 @@ func (a *app) here(cs []checkout.Checkout, flags map[string]string) ([]checkout.
 			kept = append(kept, c)
 		}
 	}
+	if len(kept) == 0 {
+		return nil, fail(a.stderr, outsideTheListing(root, a.cfg.Root))
+	}
 	return kept, ExitOK
+}
+
+// outsideTheListing says why a repository trepo is standing in is not one it
+// lists. The trepo root is named when that is the reason, because moving the
+// repository or moving the root is what the user would do about it.
+//
+// Both paths are printed resolved, the same way they are compared. git reports
+// a symlink-resolved path and the configured root keeps whatever spelling it
+// was written with, so printing one of each would show two paths that cannot be
+// held against one another by the reader making the decision.
+func outsideTheListing(root, trepoRoot string) error {
+	if !checkout.Under(trepoRoot, root) {
+		return fmt.Errorf("%s is not below the trepo root %s, so --here has nothing to narrow to",
+			checkout.Resolve(root), checkout.Resolve(trepoRoot))
+	}
+	return fmt.Errorf("%s is not a repository trepo lists, so --here has nothing to narrow to",
+		checkout.Resolve(root))
 }
 
 // standIn points the run at a directory other than the process's own.
