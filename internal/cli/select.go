@@ -3,18 +3,28 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/halkn/trepo/internal/checkout"
 	"github.com/halkn/trepo/internal/git"
-	"github.com/halkn/trepo/internal/picker"
 	"github.com/halkn/trepo/internal/repo"
 )
 
-// errNoMatch means the query matched nothing, which is different from the user
-// declining to choose.
+// errNoMatch means the query matched nothing.
 var errNoMatch = errors.New("no matching checkout")
+
+// errAmbiguous means the query matched more than one candidate where one was
+// needed. It is neither an empty result nor a failure, and a caller that wants
+// to choose between them has trepo list to build a picker over.
+var errAmbiguous = errors.New("ambiguous query")
+
+// ambiguous names the candidates that were found. It reads as errAmbiguous
+// while printing only its own message, so the caller can both recognise the
+// case and tell the user what would narrow it.
+type ambiguous struct{ msg string }
+
+func (a ambiguous) Error() string { return a.msg }
+func (a ambiguous) Unwrap() error { return errAmbiguous }
 
 // checkouts lists every checkout trepo manages.
 //
@@ -86,74 +96,32 @@ func (a *app) here(cs []checkout.Checkout, flags map[string]string) ([]checkout.
 	return kept, ExitOK
 }
 
-// choose narrows a list to what the user meant.
+// only takes the single candidate a query identified.
 //
-// One candidate needs no interaction, and asking anyway would make the command
-// unusable in a script. Without fzf the candidates go to stderr so the user
-// can retype a narrower query, while stdout stays empty and the caller's
-// command substitution yields nothing.
-func (a *app) choose(cs []checkout.Checkout, multi bool, prompt string) ([]checkout.Checkout, error) {
-	switch {
-	case len(cs) == 0:
-		return nil, errNoMatch
-	case len(cs) == 1:
-		return cs, nil
-	case !picker.Available():
-		fmt.Fprintf(a.stderr, "trepo: %d checkouts match; narrow the query or install fzf\n", len(cs))
-		for _, c := range cs {
-			fmt.Fprintln(a.stderr, "  "+strings.Join(row(c), "  "))
-		}
-		return nil, picker.ErrUnavailable
+// Several matches is an answer rather than a prompt: the query did not name one
+// checkout, and picking the first would hand back a path the caller never
+// asked for. The candidates are not repeated on stderr either, because the same
+// query through trepo list is what produces them in a form worth reading.
+func only(cs []checkout.Checkout, noun string, query []string) (checkout.Checkout, error) {
+	switch len(cs) {
+	case 0:
+		return checkout.Checkout{}, errNoMatch
+	case 1:
+		return cs[0], nil
+	default:
+		return checkout.Checkout{}, ambiguous{fmt.Sprintf(
+			"%d %s match %s; narrow the query or choose one from trepo list",
+			len(cs), noun, describe(query))}
 	}
-
-	rows := make([]picker.Row, 0, len(cs))
-	for _, c := range cs {
-		rows = append(rows, picker.Row{Display: row(c), Key: c.Path})
-	}
-
-	header := "enter: select"
-	if multi {
-		header = "tab: mark / enter: confirm"
-	}
-	keys, err := picker.Picker{
-		Prompt:  prompt,
-		Header:  header,
-		Multi:   multi,
-		Preview: previewCommand(),
-	}.Pick(rows)
-	if err != nil {
-		return nil, err
-	}
-
-	var chosen []checkout.Checkout
-	for _, key := range keys {
-		if c, ok := checkout.Locate(cs, key); ok {
-			chosen = append(chosen, c)
-		}
-	}
-	if len(chosen) == 0 {
-		// The user did choose; trepo just cannot say what. Reporting a
-		// cancellation would tell a wrapper the opposite of what happened.
-		return nil, fmt.Errorf("the picker returned %d rows that match no checkout", len(keys))
-	}
-	return chosen, nil
 }
 
-// previewCommand runs trepo itself. Resolving the executable rather than
-// trusting PATH is what makes the preview work while developing, when the
-// binary is a temporary file that `go run` built. fzf hands the command to a
-// shell, so the path is quoted: an installation below a directory with a space
-// in its name would otherwise break every preview.
-func previewCommand() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return ""
+// describe names the query in an error, without a newline or a bracket for the
+// tools that embed the line in their own interface.
+func describe(query []string) string {
+	if len(query) == 0 {
+		return "an empty query"
 	}
-	return shellQuote(exe) + " status {}"
-}
-
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	return strings.Join(query, " ")
 }
 
 // row is the human-readable form of a checkout: repository, branch, flags.

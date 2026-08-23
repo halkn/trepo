@@ -11,10 +11,10 @@ package checkout
 // The exemption is the gone flag. A branch whose remote counterpart was deleted
 // is what a squash merge leaves behind: the commits are on no ancestor of the
 // base, so nothing marks them merged, yet the branch was retired on purpose.
-// Interactively that is worth a question; unattended it is the whole point of
-// reclaiming. Removing the checkout also keeps the local branch, since only a
-// merged branch is deleted along with it, so the commits stay reachable either
-// way.
+// Named on its own that is worth holding back on; asking for what is finished
+// is what settles it. Removing the checkout also keeps the local branch, since
+// only a merged branch is deleted along with it, so the commits stay reachable
+// either way.
 func Reclaimable(c Checkout, base Base) bool {
 	if c.Kind != KindWorktree {
 		return false

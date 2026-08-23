@@ -6,8 +6,8 @@ type Verdict struct {
 	Refused bool
 	Reason  string
 
-	// Confirm holds what the user should be told before the removal happens.
-	// --force skips the asking, not the reasons.
+	// Confirm holds the reasons the removal needs a decision trepo will not
+	// make. Without --force each of them keeps the checkout in place.
 	Confirm []string
 
 	// BaseUnknown says the integration branch could not be resolved, so

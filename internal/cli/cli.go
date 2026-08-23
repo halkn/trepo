@@ -1,10 +1,11 @@
 // Package cli is trepo's command surface.
 //
-// Two rules shape everything here. Commands that answer with a location print
-// that path and nothing else on stdout, so `cd -- "$(trepo path api)"` is
-// always safe. And every exit status distinguishes "you chose nothing" from
-// "there was nothing to choose", because a shell wrapper has to react to those
-// differently.
+// Three rules shape everything here. No command asks a question: stdin belongs
+// to whatever invoked trepo, so a command that cannot settle on one action
+// reports what it needs and exits. Commands that answer with a location print
+// that path and nothing else on stdout, so `p=$(trepo path api)` is always
+// safe. And every exit status keeps "nothing matched", "several things did"
+// and "an error" apart, because a shell wrapper reacts to them differently.
 package cli
 
 import (
@@ -17,13 +18,22 @@ import (
 	"github.com/halkn/trepo/internal/git"
 )
 
-// Exit statuses. Cancellation borrows fzf's 130 so a wrapper can pass it
-// through unchanged.
+// Exit statuses.
+//
+// 130 is left to the caller: it is what fzf exits with when a picker is
+// dismissed, and trepo never chooses on the user's behalf, so nothing here can
+// produce it. Reserving it keeps a wrapper free to pass it through unchanged.
 const (
-	ExitOK        = 0
-	ExitNoMatch   = 1
-	ExitError     = 2
-	ExitCancelled = 130
+	ExitOK      = 0
+	ExitNoMatch = 1
+	ExitError   = 2
+
+	// ExitUndecided says trepo would not settle the run on its own: several
+	// checkouts matched where one was needed, or every removal asked for needs
+	// a decision the guards will not make. Both leave the caller with the same
+	// next step - narrow it down, or say --force - which is why they share a
+	// status and neither may collapse into "nothing matched" or "an error".
+	ExitUndecided = 3
 )
 
 // Options are the surroundings a run happens in, injected so tests can put a
@@ -59,18 +69,19 @@ options:
   list   --json --repos --worktrees --here
   path   --repos --here
   add    --repo <query> --from <ref>
-  rm     --force --dry-run --no-confirm --here --reclaimable
+  rm     --force --dry-run --here --reclaimable
 
 --here narrows to the repository the working directory belongs to, whichever
 of its checkouts you are standing in.
 
---force removes what rm would otherwise ask about; --no-confirm keeps it and
-says why, for callers that cannot answer a question. --reclaimable asks
-nothing either: it takes the worktrees whose work is done — merged, retired on
-the remote, or already deleted by hand — and leaves the rest.
+No command asks a question. rm keeps whatever would need one and says why;
+--force removes it anyway. --reclaimable takes the worktrees whose work is
+done — merged, retired on the remote, or already deleted by hand.
 
-For path, add and rm: finding nothing exits 1, and cancelling exits 130 —
-dismissing the picker, or every removal being declined or kept.`
+Exit status: 0 success, 1 nothing matched, 2 an error, 3 nothing was decided —
+several checkouts matched one query, or every removal was kept. Build a picker
+over "trepo list" to choose between several; "trepo status <path>" describes
+one row.`
 
 // Run executes one command and returns the process exit status.
 func Run(args []string, stdout, stderr io.Writer, opts Options) int {

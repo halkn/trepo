@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,7 +12,6 @@ import (
 	"github.com/halkn/trepo/internal/cli"
 	"github.com/halkn/trepo/internal/git"
 	"github.com/halkn/trepo/internal/gittest"
-	"github.com/halkn/trepo/internal/picker"
 )
 
 // world is a trepo installation with its own roots and its own git
@@ -344,10 +342,10 @@ func TestRemoveDeletesAMergedWorktree(t *testing.T) {
 	}
 }
 
-// A rehearsal asks nothing, so it can only rehearse the removals that need no
-// answer. One that would need an answer is reported as kept, with the status
-// the real unattended run would end on rather than an error.
-func TestRemoveDryRunKeepsWhatWouldNeedAsking(t *testing.T) {
+// A rehearsal must describe what a real run would do, so a removal the guards
+// hold back on is reported as kept, with the status that run would end on
+// rather than as something that would have gone ahead.
+func TestRemoveDryRunKeepsWhatTheGuardsHoldBackOn(t *testing.T) {
 	w := newWorld(t)
 	w.cwd = w.addRepo("github.com", "halkn", "alpha")
 	_, added, _ := w.run("add", "feat/x")
@@ -357,21 +355,21 @@ func TestRemoveDryRunKeepsWhatWouldNeedAsking(t *testing.T) {
 	}
 
 	code, _, stderr := w.run("rm", "feat/x", "--dry-run")
-	if code != cli.ExitCancelled {
-		t.Fatalf("exit = %d, want %d; stderr = %s", code, cli.ExitCancelled, stderr)
+	if code != cli.ExitUndecided {
+		t.Fatalf("exit = %d, want %d; stderr = %s", code, cli.ExitUndecided, stderr)
 	}
 	if strings.Contains(stderr, "would remove") {
-		t.Errorf("dry run announced a removal that needs an answer first:\n%s", stderr)
+		t.Errorf("dry run announced a removal the guards hold back on:\n%s", stderr)
 	}
 	if !strings.Contains(stderr, "uncommitted") {
 		t.Errorf("stderr %q does not say why the checkout was kept", stderr)
 	}
 }
 
-// The point of --no-confirm: a caller that cannot answer a question keeps the
-// guards instead of reaching for --force. Nothing was removed and nothing was
-// chosen, which is the same outcome as declining every removal.
-func TestRemoveNoConfirmKeepsWhatWouldNeedAsking(t *testing.T) {
+// A caller with no way to answer a question - a script, or a key binding inside
+// fzf - keeps the guards without reaching for --force, because that is what
+// every run does. Nothing was removed, and the status says so.
+func TestRemoveKeepsWhatTheGuardsHoldBackOn(t *testing.T) {
 	w := newWorld(t)
 	w.cwd = w.addRepo("github.com", "halkn", "alpha")
 	_, added, _ := w.run("add", "feat/x")
@@ -380,9 +378,9 @@ func TestRemoveNoConfirmKeepsWhatWouldNeedAsking(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	code, stdout, stderr := w.run("rm", "feat/x", "--no-confirm")
-	if code != cli.ExitCancelled {
-		t.Fatalf("exit = %d, want %d; stderr = %s", code, cli.ExitCancelled, stderr)
+	code, stdout, stderr := w.run("rm", "feat/x")
+	if code != cli.ExitUndecided {
+		t.Fatalf("exit = %d, want %d; stderr = %s", code, cli.ExitUndecided, stderr)
 	}
 	if stdout != "" {
 		t.Errorf("stdout = %q, want empty", stdout)
@@ -390,43 +388,30 @@ func TestRemoveNoConfirmKeepsWhatWouldNeedAsking(t *testing.T) {
 	if !strings.Contains(stderr, "uncommitted") || !strings.Contains(stderr, path) {
 		t.Errorf("stderr %q does not say which checkout was kept and why", stderr)
 	}
+	if !strings.Contains(stderr, "--force") {
+		t.Errorf("stderr %q does not say what would remove it anyway", stderr)
+	}
 	if _, err := os.Stat(path); err != nil {
-		t.Errorf("--no-confirm removed a worktree with uncommitted changes: %v", err)
+		t.Errorf("a worktree with uncommitted changes was removed: %v", err)
 	}
 }
 
-func TestRemoveNoConfirmStillRemovesWhatNeedsNoAsking(t *testing.T) {
+// --force is how the caller makes the decision the guards would not.
+func TestRemoveForceTakesWhatTheGuardsHeldBack(t *testing.T) {
 	w := newWorld(t)
 	w.cwd = w.addRepo("github.com", "halkn", "alpha")
-	_, added, _ := w.run("add", "feat/x")
-	path := strings.TrimSpace(added)
+	path := w.worktreeWith("feat/x", func(path string) {
+		if err := os.WriteFile(filepath.Join(path, "scratch.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
 
-	code, _, stderr := w.run("rm", "feat/x", "--no-confirm")
+	code, _, stderr := w.run("rm", "feat/x", "--force")
 	if code != cli.ExitOK {
 		t.Fatalf("exit = %d, want %d; stderr = %s", code, cli.ExitOK, stderr)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Errorf("worktree survived: %v", err)
-	}
-}
-
-// One flag removes without asking, the other keeps whatever would need asking.
-// Choosing either for the caller would be a guess about work they could lose.
-func TestRemoveRejectsForceWithNoConfirm(t *testing.T) {
-	w := newWorld(t)
-	w.cwd = w.addRepo("github.com", "halkn", "alpha")
-	_, added, _ := w.run("add", "feat/x")
-	path := strings.TrimSpace(added)
-
-	code, _, stderr := w.run("rm", "feat/x", "--force", "--no-confirm")
-	if code != cli.ExitError {
-		t.Fatalf("exit = %d, want %d", code, cli.ExitError)
-	}
-	if !strings.Contains(stderr, "--force") || !strings.Contains(stderr, "--no-confirm") {
-		t.Errorf("stderr %q does not name both options", stderr)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("the rejected run removed the worktree anyway: %v", err)
+		t.Errorf("worktree survived a forced removal: %v", err)
 	}
 }
 
@@ -445,37 +430,45 @@ func TestRemoveNeverTargetsTheMainCheckout(t *testing.T) {
 	}
 }
 
-// Without a picker, an ambiguous query cannot be resolved. Reporting that as a
-// cancellation would tell a wrapper the user made a choice, and as no-match
-// that nothing exists, when in fact several things do.
-func TestPathWithSeveralMatchesAndNoPickerListsThemAndFails(t *testing.T) {
-	if picker.Available() {
-		// A PATH with git on it but no fzf, which is what a machine that has
-		// not installed fzf looks like.
-		gitPath, err := exec.LookPath("git")
-		if err != nil {
-			t.Skip("git is not on PATH")
-		}
-		bin := t.TempDir()
-		if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
-			t.Skipf("symlinks unavailable: %v", err)
-		}
-		t.Setenv("PATH", bin)
-	}
+// trepo does not choose between candidates, so a query that names several is an
+// answer of its own. Reporting it as no-match would say nothing exists when in
+// fact several things do, and as success would hand back a path nobody asked
+// for.
+func TestPathWithSeveralMatchesIsUndecided(t *testing.T) {
 	w := newWorld(t)
 	w.addRepo("github.com", "halkn", "alpha")
 	w.addRepo("github.com", "halkn", "alpine")
 
 	code, stdout, stderr := w.run("path", "alp")
-	if code != cli.ExitError {
-		t.Errorf("exit = %d, want %d", code, cli.ExitError)
+	if code != cli.ExitUndecided {
+		t.Errorf("exit = %d, want %d", code, cli.ExitUndecided)
 	}
 	if stdout != "" {
 		t.Errorf("stdout = %q, want empty", stdout)
 	}
-	for _, want := range []string{"alpha", "alpine", "fzf"} {
-		if !strings.Contains(stderr, want) {
-			t.Errorf("stderr does not mention %q:\n%s", want, stderr)
+	if countLines(stderr) != 1 {
+		t.Errorf("stderr has %d lines, want one:\n%s", countLines(stderr), stderr)
+	}
+	if !strings.Contains(stderr, "alp") || !strings.Contains(stderr, "2") {
+		t.Errorf("stderr %q does not say the query matched two checkouts", stderr)
+	}
+}
+
+// The same holds for rm, which acts on one worktree at a time: a query that
+// names several must not delete all of them.
+func TestRemoveWithSeveralMatchesRemovesNothing(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	one := w.worktreeWith("feat/one", nil)
+	two := w.worktreeWith("feat/two", nil)
+
+	code, _, stderr := w.run("rm", "feat")
+	if code != cli.ExitUndecided {
+		t.Errorf("exit = %d, want %d (stderr = %s)", code, cli.ExitUndecided, stderr)
+	}
+	for _, kept := range []string{one, two} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Errorf("an ambiguous query removed %s: %v", kept, err)
 		}
 	}
 }

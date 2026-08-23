@@ -82,11 +82,11 @@ func TestRemoveRefusesTheMainCheckout(t *testing.T) {
 	}
 }
 
-// Without a way to say yes, a checkout that needs confirmation must survive.
-// That is not a failure of the command: the guards did their job, so it reports
-// as a skip, and the message has to carry the reason and the flag that would
-// let it through.
-func TestRemoveWithoutAConfirmerSkipsAndSaysWhy(t *testing.T) {
+// Nothing asks, so a checkout the guards want a decision on must survive. That
+// is not a failure of the command: the guards did their job, so it reports as a
+// skip, and the message has to carry the reason and the flag that would let it
+// through.
+func TestRemoveSkipsWhatNeedsADecisionAndSaysWhy(t *testing.T) {
 	fixture := gittest.New(t)
 	wtPath := filepath.Join(filepath.Dir(fixture.Dir), "wt-dirty")
 	fixture.Git("worktree", "add", "-b", "dirty-one", wtPath)
@@ -109,7 +109,9 @@ func TestRemoveWithoutAConfirmerSkipsAndSaysWhy(t *testing.T) {
 	}
 }
 
-func TestRemoveSkipsWhenTheConfirmerSaysNo(t *testing.T) {
+// --force is the decision the guards were waiting for, and it has to reach git
+// too: `git worktree remove` refuses a dirty worktree on its own terms.
+func TestRemoveForceTakesWhatTheGuardsHeldBack(t *testing.T) {
 	fixture := gittest.New(t)
 	wtPath := filepath.Join(filepath.Dir(fixture.Dir), "wt-dirty")
 	fixture.Git("worktree", "add", "-b", "dirty-one", wtPath)
@@ -118,7 +120,30 @@ func TestRemoveSkipsWhenTheConfirmerSaysNo(t *testing.T) {
 	}
 
 	r := remover(fixture)
-	r.Confirm = func(checkout.Checkout, checkout.Verdict) bool { return false }
+	r.Force = true
+	target := find(t, list(t, fixture), wtPath)
+
+	if err := r.Remove(target, checkout.Base{Name: "main", Known: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(wtPath); !os.IsNotExist(statErr) {
+		t.Errorf("worktree survived a forced removal: %v", statErr)
+	}
+}
+
+// Reclaiming settles one question - a branch retired on the remote - and no
+// other. Widening it to everything --force covers would make the unattended
+// path the destructive one.
+func TestRemoveReclaimStillHoldsBackOnUncommittedWork(t *testing.T) {
+	fixture := gittest.New(t)
+	wtPath := filepath.Join(filepath.Dir(fixture.Dir), "wt-dirty")
+	fixture.Git("worktree", "add", "-b", "dirty-one", wtPath)
+	if err := os.WriteFile(filepath.Join(wtPath, "scratch.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := remover(fixture)
+	r.Reclaim = true
 	target := find(t, list(t, fixture), wtPath)
 
 	err := r.Remove(target, checkout.Base{Name: "main", Known: true})
@@ -126,27 +151,7 @@ func TestRemoveSkipsWhenTheConfirmerSaysNo(t *testing.T) {
 		t.Fatalf("Remove() = %v, want ErrSkipped", err)
 	}
 	if _, statErr := os.Stat(wtPath); statErr != nil {
-		t.Errorf("worktree was removed after the answer was no: %v", statErr)
-	}
-}
-
-func TestRemoveProceedsWhenTheConfirmerSaysYes(t *testing.T) {
-	fixture := gittest.New(t)
-	wtPath := filepath.Join(filepath.Dir(fixture.Dir), "wt-dirty")
-	fixture.Git("worktree", "add", "-b", "dirty-one", wtPath)
-	if err := os.WriteFile(filepath.Join(wtPath, "scratch.txt"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	r := remover(fixture)
-	r.Confirm = func(checkout.Checkout, checkout.Verdict) bool { return true }
-	target := find(t, list(t, fixture), wtPath)
-
-	if err := r.Remove(target, checkout.Base{Name: "main", Known: true}); err != nil {
-		t.Fatal(err)
-	}
-	if _, statErr := os.Stat(wtPath); !os.IsNotExist(statErr) {
-		t.Errorf("worktree survived a confirmed removal: %v", statErr)
+		t.Errorf("reclaiming removed a worktree with uncommitted changes: %v", statErr)
 	}
 }
 
@@ -192,8 +197,8 @@ func TestRemoveDryRunChangesNothing(t *testing.T) {
 	}
 }
 
-// The picker hands trepo a path, and the repository it belongs to has to be
-// found from that alone — including when the directory no longer exists.
+// A caller hands trepo a path, and the repository it belongs to has to be found
+// from that alone — including when the directory no longer exists.
 func TestLocate(t *testing.T) {
 	fixture := gittest.New(t)
 	wtPath := filepath.Join(filepath.Dir(fixture.Dir), "wt-gone")
