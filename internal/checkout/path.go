@@ -24,6 +24,30 @@ func Under(parent, child string) bool {
 // SamePath reports whether two spellings name the same directory.
 func SamePath(a, b string) bool { return Resolve(a) == Resolve(b) }
 
+// Containing finds the checkout that dir lives in, among ones already listed.
+//
+// The innermost one wins. A worktree created inside its own repository puts a
+// directory under two checkouts at once, and the one meant is the one git would
+// answer with. Every candidate is a prefix of dir, so the longer path is the
+// deeper checkout.
+//
+// Matching against the listing rather than asking git about dir is what keeps
+// this answerable for a checkout whose directory is gone, and what makes the
+// answer carry the flags the listing already computed.
+func Containing(all []Checkout, dir string) (Checkout, bool) {
+	var best Checkout
+	found := false
+	for _, c := range all {
+		if !Under(c.Path, dir) {
+			continue
+		}
+		if !found || len(Resolve(c.Path)) > len(Resolve(best.Path)) {
+			best, found = c, true
+		}
+	}
+	return best, found
+}
+
 // Resolve is the canonical spelling of a path: absolute, cleaned, and with
 // symlinks followed as far as the path exists. Every path trepo reports goes
 // through it, so that a path taken from trepo's output compares equal to what

@@ -106,17 +106,3 @@ func (rm Remover) deleteMergedBranch(c Checkout, base Base) {
 	}
 	_, _ = rm.Git.Run(c.Repo.Root, "branch", "-d", c.Branch)
 }
-
-// Locate finds the checkout at path among ones already listed.
-//
-// Matching against the listing rather than asking git about the path is what
-// makes a removed directory reclaimable: `git -C <gone>` fails before it can
-// report which repository the worktree belonged to.
-func Locate(all []Checkout, path string) (Checkout, bool) {
-	for _, c := range all {
-		if SamePath(c.Path, path) {
-			return c, true
-		}
-	}
-	return Checkout{}, false
-}

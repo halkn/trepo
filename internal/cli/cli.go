@@ -66,13 +66,16 @@ usage:
   trepo version                        print which build this is
 
 options:
-  list   --json --repos --worktrees --here
-  path   --repos --here
+  list   --json --repos --worktrees --here --cwd <dir>
+  path   --repos --here --current --cwd <dir>
   add    --repo <query> --from <ref>
   rm     --force --dry-run --here --reclaimable
 
 --here narrows to the repository the working directory belongs to, whichever
-of its checkouts you are standing in.
+of its checkouts you are standing in; --current narrows to that one checkout.
+--cwd judges both by <dir> instead of by where trepo was run, for a caller
+that asks about a directory it is not in. rm does not take it: the working
+directory is what marks the checkout rm refuses to remove.
 
 No command asks a question. rm keeps whatever would need one and says why;
 --force removes it anyway. --reclaimable takes the worktrees whose work is
