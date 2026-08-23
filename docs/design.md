@@ -124,9 +124,26 @@ different each run.
 where the default branch is checked out; suppressing it would make the one
 checkout that always exists the one that cannot be selected.
 
-The human-readable form keeps flags in their own column, so a branch named
-`fix/main-nav` cannot be mistaken for the `main` marker by a caller matching on
-text.
+**A row carries repository, kind, branch, flags and path, in that order.** The
+set is fixed by one requirement: a caller draws a row without running git. Each
+column earns its place — the repository and branch name the checkout, kind
+decides what selecting it does, flags decide how it is drawn, and the path is
+what the caller acts on. The path stays last so that `${row##*<tab>}` keeps
+working however many columns grow in front of it.
+
+**kind is a column, not a flag.** Flags are the state a checkout is in,
+computed per listing and read by the removal guards; kind is what the checkout
+is. Putting it among the flags would add something the guards cannot act on to
+the vocabulary they read. It also cannot be derived from the rest, which is why
+it is printed rather than left implicit: a branch named `fix/main-nav` must not
+be mistaken for the main checkout by a caller matching on text.
+
+**Columns are values, not a rendering.** Widths belong to whatever draws the
+row, since that is what knows the terminal and the font. A width fixed here is
+stripped again by every caller that splits on tabs, and is overrun by the first
+branch name longer than it, so it does not even buy the alignment it costs.
+That leaves two forms — `--json` and tab-separated values — and no third,
+pre-formatted one.
 
 **A checkout's state is one vocabulary, computed once.** `checkout.Lister`
 fills `Flags` (`dirty`, `merged`, `gone`, `locked`, `protected`, `current`, …),
