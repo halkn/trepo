@@ -14,13 +14,14 @@ Where each decision lives in the code:
 | decision | code |
 | --- | --- |
 | what a checkout is, how one is listed and flagged | `internal/checkout` (`checkout.go`, `list.go`, `all.go`) |
-| whether a removal is allowed, and what it asks first | `internal/checkout/guard.go`, `remove.go`, `reclaim.go` |
+| whether a removal is allowed, and what it needs confirmed | `internal/checkout/guard.go`, `remove.go`, `reclaim.go` |
 | running git and parsing its porcelain output | `internal/git` |
 | subcommands, flags, output and exit status | `internal/cli` |
 | layout of a clone, and finding existing ones | `internal/repo` |
 
-Sections below marked **(direction)** are not fully reflected in the code yet;
-the issue that closes the gap is named.
+What follows is what trepo is meant to be, which is not always what the code is
+today. Where the two differ, this file is the one to change the code towards;
+the gap itself is tracked in issues, not here.
 
 ## Responsibilities
 
@@ -40,14 +41,11 @@ The boundary follows from having several callers of the same answers. A
 judgement duplicated across callers drifts; a judgement inside trepo is written
 once and covered by unit tests.
 
-So: no caller reimplements a guard, and when a caller needs something to draw a
-row, the fix is to add it to the output rather than to let the caller run git.
-
-**(direction, #12)** The interactive half is still inside trepo: `internal/picker`
-runs fzf when a query matches several checkouts, and `rm` asks for confirmation
-by opening `/dev/tty`. Both move out to the callers; the judgement they act on
-(`checkout.Guard`) stays. A change that adds interaction to trepo goes the wrong
-way even though it matches the code as it stands.
+So: no domain type describes a prompt or a picker, no caller reimplements a
+guard, and when a caller needs something to draw a row, the fix is to add it to
+the output rather than to let the caller run git. Running fzf and asking a
+question are the caller's side of the line; deciding what may be removed is
+trepo's.
 
 ## Command contract
 
@@ -67,11 +65,11 @@ way even though it matches the code as it stands.
 - **Errors on stderr are one line, with no newline and no `()`.** They get
   embedded in other tools' UI, such as an fzf `change-header(...)` action, which
   breaks on both.
-- **Commands do not interact (direction, #12).** A command that cannot decide
-  reports what it needs and exits, rather than opening a prompt. stdin belongs
-  to whatever invoked trepo — after fzf has run, or inside an fzf `transform`,
-  there is nothing to read from it, which is why `rm --no-confirm` exists today
-  and why the prompt itself reads `/dev/tty` instead of stdin.
+- **Commands do not interact.** A command that cannot decide reports what it
+  needs and exits, rather than opening a prompt. stdin belongs to whatever
+  invoked trepo: after fzf has run, or inside an fzf `transform`, there is
+  nothing there to read, so a command that depends on an answer is a command
+  that some callers cannot use at all.
 
 ## Modes
 
@@ -92,12 +90,6 @@ token affects acquisition and review, not the ability to reach a checkout.
 
 The shared part is the shape of a row and of a preview, so a caller renders all
 three the same way. That is a rendering contract, not a merged mode.
-
-Only development exists today, as `list` / `path` / `add` over local checkouts;
-`get` clones a repository whose URL the caller already knows. Listing
-repositories that are not local yet is #16, and PR / issue candidates are #17.
-The mode boundary is what those two have to respect, not something already
-encoded in the command set.
 
 ## Listing
 
@@ -143,9 +135,9 @@ directory is gone cannot answer for itself, and that is precisely the case
 worth reclaiming.
 
 The same rule constrains anything else worth remembering about a checkout, such
-as the fact that it came from a review (#17): whatever holds it has to survive
-the directory being moved and the branch being renamed, which rules out a side
-file keyed by path. Which store that ends up being is open.
+as the fact that it came from a review: whatever holds it has to survive the
+directory being moved and the branch being renamed, which rules out a side file
+keyed by path.
 
 Configuration scope follows from the same idea. `trepo.root`,
 `trepo.worktreeRoot` and `trepo.defaultHost` decide which checkouts exist at
@@ -179,8 +171,8 @@ exists, and it cannot be added on top.
 **One screen for all modes.** Rejected for the reasons in [Modes](#modes).
 
 **Deduplicating the repository row when worktrees exist.** It reads as a
-cleaner list and removes the checkout containing the default branch from the
-candidates. See [Listing](#listing).
+cleaner list, at the cost of dropping the checkout that holds the default
+branch out of the candidates. See [Listing](#listing).
 
 **A port to Rust, or staying in zsh.** trepo takes over from a pair of zsh
 functions that could not be tested where it mattered: the flag computation and
@@ -188,14 +180,3 @@ the removal guards were the untested part, and they are the part that loses
 work when it is wrong. Rust would buy nothing here — the work is process
 orchestration around git, the standard library covers it with no dependencies,
 and `go install` plus a tagged release is the whole distribution story.
-
-## Open questions
-
-Recorded here when decided, in the issue until then.
-
-- The `list --json` columns a caller needs to draw a row, and whether the main
-  checkout gets an explicit column or is derived from `kind` (#13).
-- Where the remote repository listing cache lives and what invalidates it
-  (#16).
-- How a review-created worktree is recorded, and whether fork PRs and issues
-  are candidates (#17).
