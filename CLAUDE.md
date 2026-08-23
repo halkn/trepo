@@ -28,7 +28,8 @@ go test ./internal/cli -run TestPath -v      # 出力付き
 ## Invariants（壊しやすい約束）
 
 - **`get` / `path` / `add` の stdout は path 1 行だけ。** 進捗も警告も stderr。`p=$(trepo path api) && cd -- "$p"` が成立することが契約
-- **終了コードに意味がある**: 0 成功 / 1 該当なし / 2 エラー / 130 選択キャンセル。shell wrapper が分岐するので混ぜない
+- **終了コードに意味がある**: 0 成功 / 1 該当なし / 2 エラー / 3 未決（複数マッチ、または rm が全件を保留）。130 は fzf のキャンセル用に呼び出し側へ空けてあり trepo は返さない。shell wrapper が分岐するので混ぜない
+- **対話しない。** picker も確認プロンプトも持たない。決められないときは理由を stderr に 1 行出して終了コードで返す。選択は `trepo list` の上に呼び出し側が組む
 - **path 比較は必ず `checkout.Resolve` / `SamePath` / `Under` を通す。** git は symlink 解決済みの path を返し shell は返さない（macOS の `/tmp` → `/private/tmp`）。素の文字列比較にすると、自分が立っている checkout を削除できてしまう
 - **repository root は `git.RepoRoot`（worktree list の先頭エントリ）で求める。** `--git-common-dir` の親は bare・`--separate-git-dir`・submodule で別の場所を指す
 - **stderr のエラーは 1 行、改行と `()` を含めない。** fzf の `change-header(...)` など他ツールの UI に埋め込まれても壊れないように

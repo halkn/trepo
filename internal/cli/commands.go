@@ -11,7 +11,6 @@ import (
 	"github.com/halkn/trepo/internal/checkout"
 	"github.com/halkn/trepo/internal/config"
 	"github.com/halkn/trepo/internal/git"
-	"github.com/halkn/trepo/internal/picker"
 	"github.com/halkn/trepo/internal/repo"
 )
 
@@ -125,11 +124,11 @@ func (a *app) path(args []string) int {
 		cs = kept
 	}
 
-	chosen, err := a.choose(cs, false, "checkout> ")
+	chosen, err := only(cs, "checkouts", query)
 	if err != nil {
 		return a.selectionError(err)
 	}
-	fmt.Fprintln(a.stdout, chosen[0].Path)
+	fmt.Fprintln(a.stdout, chosen.Path)
 	return ExitOK
 }
 
@@ -163,20 +162,14 @@ func (a *app) add(args []string) int {
 	return ExitOK
 }
 
-// remove deletes worktrees, asking before anything that cannot be undone.
+// remove deletes worktrees, and keeps the ones whose removal it will not
+// decide on its own.
 func (a *app) remove(args []string) int {
 	flags, query, code, ok := a.parse(args, spec{
-		"force": false, "dry-run": false, "no-confirm": false,
-		"here": false, "reclaimable": false,
+		"force": false, "dry-run": false, "here": false, "reclaimable": false,
 	})
 	if !ok {
 		return code
-	}
-	// Two opposite answers to the same question, so there is no reading of the
-	// pair that is not a guess about work the user could lose.
-	if flags["force"] == "true" && flags["no-confirm"] == "true" {
-		return fail(a.stderr, errors.New(
-			"--force removes without asking and --no-confirm keeps whatever needs asking; pass one"))
 	}
 	reclaim := flags["reclaimable"] == "true"
 	// Reclaiming only ever selects what needs no question, so --force could not
@@ -207,6 +200,8 @@ func (a *app) remove(args []string) int {
 	bases := &baseCache{git: a.opts.Git, seen: map[string]checkout.Base{}}
 	var chosen []checkout.Checkout
 	if reclaim {
+		// The flag is the selection, so several targets are what was asked for
+		// rather than a query that failed to name one.
 		for _, c := range removable {
 			if checkout.Reclaimable(c, bases.of(c.Repo.Root)) {
 				chosen = append(chosen, c)
@@ -215,37 +210,29 @@ func (a *app) remove(args []string) int {
 		if len(chosen) == 0 {
 			return a.selectionError(errNoMatch)
 		}
-	} else if chosen, err = a.choose(removable, true, "remove> "); err != nil {
-		return a.selectionError(err)
+	} else {
+		c, err := only(removable, "worktrees", query)
+		if err != nil {
+			return a.selectionError(err)
+		}
+		chosen = []checkout.Checkout{c}
 	}
 
 	rm := checkout.Remover{
-		Git:    a.opts.Git,
-		Force:  flags["force"] == "true",
-		DryRun: flags["dry-run"] == "true",
-	}
-	switch {
-	case reclaim:
-		// The selection is the answer. Every target already needs no question
-		// except the one reclaiming settles - a branch retired on the remote -
-		// and saying yes here is what tells the removal it may go ahead with it.
-		rm.Confirm = func(checkout.Checkout, checkout.Verdict) bool { return true }
-	case !rm.DryRun && flags["no-confirm"] != "true":
-		// A rehearsal asks nothing, because it does nothing there is anything to
-		// agree to, and --no-confirm is the caller saying they cannot be asked.
-		// Either way the removals that would need an answer are skipped with
-		// their reason, which is what keeps the guards in place for a caller
-		// whose stdin belongs to something else.
-		rm.Confirm = a.confirmer()
+		Git:     a.opts.Git,
+		Force:   flags["force"] == "true",
+		Reclaim: reclaim,
+		DryRun:  flags["dry-run"] == "true",
 	}
 
 	status := ExitOK
-	done := 0
+	done, kept := 0, 0
 	for _, c := range chosen {
 		base := bases.of(c.Repo.Root)
 		if err := rm.Remove(c, base); err != nil {
 			if errors.Is(err, checkout.ErrSkipped) {
 				fmt.Fprintln(a.stderr, "trepo: "+oneline(err))
+				kept++
 				continue
 			}
 			fail(a.stderr, err)
@@ -259,11 +246,12 @@ func (a *app) remove(args []string) int {
 			fmt.Fprintf(a.stderr, "trepo: would remove %s\n", c.Path)
 		}
 	}
-	// Answering "no" to everything leaves the same world behind as dismissing
-	// the picker, and a wrapper has to be able to tell both apart from a
-	// removal that happened.
-	if status == ExitOK && done == 0 {
-		return ExitCancelled
+	// A run that removed one checkout and kept another still succeeded, and
+	// which ones were kept is on stderr. Keeping every one of them is the case
+	// a wrapper has to tell apart: nothing changed, and the reasons on stderr
+	// say what a further run would have to carry.
+	if status == ExitOK && done == 0 && kept > 0 {
+		return ExitUndecided
 	}
 	return status
 }
@@ -286,7 +274,8 @@ func (b *baseCache) of(root string) checkout.Base {
 	return base
 }
 
-// status describes one checkout, and is also what the picker previews with.
+// status describes one checkout, and is what a caller's preview window renders
+// a row with.
 func (a *app) status(args []string) int {
 	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help") {
 		fmt.Fprintln(a.stdout, usage)
@@ -356,24 +345,25 @@ func (a *app) targetRepo(query string) (repo.Repo, int) {
 	if err != nil {
 		return repo.Repo{}, fail(a.stderr, err)
 	}
+	terms := strings.Fields(query)
 	var repos []checkout.Checkout
-	for _, c := range filter(cs, strings.Fields(query)) {
+	for _, c := range filter(cs, terms) {
 		if c.Kind == checkout.KindRepo {
 			repos = append(repos, c)
 		}
 	}
-	chosen, err := a.choose(repos, false, "repository> ")
+	chosen, err := only(repos, "repositories", terms)
 	if err != nil {
 		return repo.Repo{}, a.selectionError(err)
 	}
-	return chosen[0].Repo, ExitOK
+	return chosen.Repo, ExitOK
 }
 
-// selectionError maps the two ways a selection ends with nothing onto statuses
-// a shell can tell apart.
+// selectionError maps the ways a selection ends without one checkout onto
+// statuses a shell can tell apart.
 func (a *app) selectionError(err error) int {
 	switch {
-	case errors.Is(err, errNoMatch), errors.Is(err, picker.ErrNoMatch):
+	case errors.Is(err, errNoMatch):
 		if a.incomplete {
 			fmt.Fprintln(a.stderr,
 				"trepo: no matching checkout among the repositories that could be read")
@@ -381,13 +371,9 @@ func (a *app) selectionError(err error) int {
 		}
 		fmt.Fprintln(a.stderr, "trepo: no matching checkout")
 		return ExitNoMatch
-	case errors.Is(err, picker.ErrUnavailable):
-		// Several candidates and no way to ask about them. That is neither an
-		// empty result nor a decision the user made, so it must not be
-		// reported as either; the candidates are already on stderr.
-		return ExitError
-	case errors.Is(err, picker.ErrCancelled):
-		return ExitCancelled
+	case errors.Is(err, errAmbiguous):
+		fmt.Fprintln(a.stderr, "trepo: "+oneline(err))
+		return ExitUndecided
 	default:
 		return fail(a.stderr, err)
 	}

@@ -73,8 +73,8 @@ type Base struct {
 
 // Sort orders checkouts the way every command prints them: by repository, main
 // checkout first within a repository, then by branch. Listing runs
-// concurrently, so without this the output — and the cursor position in the
-// picker — would move between invocations.
+// concurrently, so without this the output — and the cursor position in
+// whatever draws it — would move between invocations.
 func Sort(cs []Checkout) {
 	sort.SliceStable(cs, func(i, j int) bool {
 		a, b := cs[i], cs[j]

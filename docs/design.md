@@ -54,14 +54,24 @@ trepo's.
   and confirmations go to stderr. `p=$(trepo path api) && cd -- "$p"` holding
   is what makes a shell wrapper a wrapper rather than a parser.
 - **Exit status carries the outcome**, because a wrapper branches on it before
-  it looks at any text: `0` success, `1` nothing matched, `2` error, `130`
-  nothing was chosen. `1` and `130` must stay distinguishable — "no repository
-  called api" and "the picker was dismissed" lead to different behaviour in the
-  caller, and collapsing them makes a cancelled selection look like a missing
-  repository.
+  it looks at any text: `0` success, `1` nothing matched, `2` error, `3`
+  nothing was decided. `130` is left to the caller, since that is what fzf
+  exits with when a picker is dismissed and trepo runs no picker.
+- **`3` is "trepo would not settle this", and it must stay apart from `1` and
+  `2`.** Two things reach it: a query that named several checkouts where one
+  was needed, and a run of `rm` that kept every target the guards want a
+  decision on. They share a status because they leave the caller with the same
+  next step — narrow it down, or say `--force` — and neither may collapse into
+  "nothing called api exists" or "something went wrong", which lead the caller
+  somewhere else entirely.
 - **`list` never asks and never fails on emptiness.** It is a data source, so 0
   results is exit 0 with no output. `path` and `rm` are selections, so 0 results
   is exit 1.
+- **A command that resolves to several candidates does not pick one.** It says
+  how many matched and stops. Printing the first would hand back a path nobody
+  asked for, and printing all of them would break the one-path contract; the
+  candidates already have a home in `list`, which is what a caller builds a
+  picker over.
 - **Errors on stderr are one line, with no newline and no `()`.** They get
   embedded in other tools' UI, such as an fzf `change-header(...)` action, which
   breaks on both.
@@ -70,6 +80,12 @@ trepo's.
   invoked trepo: after fzf has run, or inside an fzf `transform`, there is
   nothing there to read, so a command that depends on an answer is a command
   that some callers cannot use at all.
+- **A removal that needs a decision is kept, not asked about.** `rm` names the
+  checkout and the reason on stderr and exits `3`; `--force` is the caller
+  making that decision. There is no flag for "do not ask", because nothing
+  asks, and no flag for "ask", because the answer would have nowhere to come
+  from. Which reasons hold a removal back belongs to the guards, and stays the
+  same however the run was invoked.
 
 ## Modes
 
