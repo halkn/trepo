@@ -136,6 +136,19 @@ second query issued from whichever command happens to need it, because two
 places asking git the same question is how a listing and a guard come to
 disagree about the checkout in front of them.
 
+**"Which checkout holds this directory" is the `current` flag, and it is
+answered for any directory.** A caller drawing checkouts often asks about a
+directory it is not running in — a terminal multiplexer reports the working
+directory of a pane, which is any directory below a checkout. So the directory
+the flag is judged by is an input, and resolution goes upward to the innermost
+checkout containing it rather than matching an exact path.
+
+**That input is not offered to `rm`.** The same flag is what refuses to remove
+the checkout the user is standing in, so a caller able to move it could delete
+that checkout out from under them. A guard whose premise the caller supplies is
+not a guard, which is why this one input is readable-only: the commands that
+report take it, the command that destroys reads the real working directory.
+
 ## State
 
 **The truth is the filesystem and git config.** trepo keeps no database of

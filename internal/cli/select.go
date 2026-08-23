@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/halkn/trepo/internal/checkout"
@@ -94,6 +95,45 @@ func (a *app) here(cs []checkout.Checkout, flags map[string]string) ([]checkout.
 		}
 	}
 	return kept, ExitOK
+}
+
+// standIn points the run at a directory other than the process's own.
+//
+// A caller that draws checkouts does not always run from the one it is asking
+// about: a terminal multiplexer reports the working directory of a pane, which
+// is any directory below a checkout. Moving the mark rather than adding a way
+// to match paths keeps one answer to "which checkout holds this" — the current
+// flag the listing already computes.
+//
+// The directory has to exist. One that does not marks no checkout, which would
+// read as "you are nowhere" instead of as the mistake it is. Only commands that
+// read take this: the same mark is what stops rm removing the checkout the user
+// is standing in, so a caller able to move it could delete that checkout.
+func (a *app) standIn(flags map[string]string) int {
+	dir, ok := flags["cwd"]
+	if !ok {
+		return ExitOK
+	}
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return fail(a.stderr, fmt.Errorf("%s is not a directory to stand in", dir))
+	}
+	a.opts.Cwd = dir
+	return ExitOK
+}
+
+// current narrows to the checkout the run is standing in, when --current was
+// given. Nesting settles which one that is, so this is a resolution rather than
+// a choice between candidates.
+func current(cs []checkout.Checkout, flags map[string]string, cwd string) []checkout.Checkout {
+	if flags["current"] != "true" {
+		return cs
+	}
+	c, ok := checkout.Containing(cs, cwd)
+	if !ok {
+		return nil
+	}
+	return []checkout.Checkout{c}
 }
 
 // only takes the single candidate a query identified.

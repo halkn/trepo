@@ -927,3 +927,112 @@ func TestPathDoesNotReportNoMatchWhenARepositoryCouldNotBeRead(t *testing.T) {
 		t.Errorf("stderr %q does not name the repository that failed", stderr)
 	}
 }
+
+// herdr reports the cwd of a focused pane, which is an arbitrary directory
+// below a checkout. Without a way to say which directory to judge by, the
+// caller has to run git itself to find the checkout holding it.
+func TestPathCurrentFromADirectoryBelowACheckout(t *testing.T) {
+	w := newWorld(t)
+	alpha := w.addRepo("github.com", "halkn", "alpha")
+	w.addRepo("github.com", "halkn", "beta")
+	sub := filepath.Join(alpha, "internal", "cli")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := w.run("path", "--current", "--cwd", sub)
+	if code != cli.ExitOK {
+		t.Fatalf("exit = %d, want %d; stderr = %s", code, cli.ExitOK, stderr)
+	}
+	if got := strings.TrimSpace(stdout); !checkout.SamePath(got, alpha) {
+		t.Errorf("path = %q, want %q", got, alpha)
+	}
+}
+
+// The current flag is what already answers "which checkout holds this", so
+// --cwd has to move it rather than introduce a second notion of the same thing.
+func TestListCwdMovesTheCurrentFlag(t *testing.T) {
+	w := newWorld(t)
+	alpha := w.addRepo("github.com", "halkn", "alpha")
+	sub := filepath.Join(alpha, "docs")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stdout, _ := w.run("list", "--cwd", sub)
+	if !strings.Contains(stdout, "current") {
+		t.Errorf("no row is marked current:\n%s", stdout)
+	}
+}
+
+// status is the preview entry point, and a caller previews whatever directory
+// it is looking at rather than a path it got from trepo.
+func TestStatusAcceptsADirectoryBelowACheckout(t *testing.T) {
+	w := newWorld(t)
+	alpha := w.addRepo("github.com", "halkn", "alpha")
+	sub := filepath.Join(alpha, "docs")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := w.run("status", sub)
+	if code != cli.ExitOK {
+		t.Fatalf("exit = %d, want %d; stderr = %s", code, cli.ExitOK, stderr)
+	}
+	if !strings.Contains(stdout, "halkn/alpha") {
+		t.Errorf("status does not describe the checkout holding it:\n%s", stdout)
+	}
+}
+
+// Options.Cwd is what marks the checkout you are standing in, and that mark is
+// what stops rm removing it. Letting a caller move the mark would let it delete
+// the checkout the user is actually in, so rm does not take the option at all.
+func TestRemoveDoesNotTakeCwd(t *testing.T) {
+	w := newWorld(t)
+	w.cwd = w.addRepo("github.com", "halkn", "alpha")
+	path := w.worktreeWith("feat/x", nil)
+
+	code, _, stderr := w.run("rm", "--cwd", t.TempDir(), "feat/x")
+	if code != cli.ExitError {
+		t.Errorf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if !strings.Contains(stderr, "cwd") {
+		t.Errorf("stderr %q does not name the rejected option", stderr)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("the rejected run removed the worktree anyway: %v", err)
+	}
+}
+
+// A directory that is not there marks no checkout at all, which would read as
+// "you are nowhere" instead of as the mistake it is.
+func TestCwdThatDoesNotExistIsAnError(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("github.com", "halkn", "alpha")
+
+	code, stdout, stderr := w.run("path", "--current", "--cwd", filepath.Join(w.root, "nowhere"))
+	if code != cli.ExitError {
+		t.Errorf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	if !strings.Contains(stderr, "nowhere") {
+		t.Errorf("stderr %q does not name the directory", stderr)
+	}
+}
+
+// Outside every checkout there is nothing to be current in, and that is a
+// no-match rather than an error.
+func TestPathCurrentOutsideEveryCheckoutExitsOne(t *testing.T) {
+	w := newWorld(t)
+	w.addRepo("github.com", "halkn", "alpha")
+
+	code, stdout, _ := w.run("path", "--current", "--cwd", w.cwd)
+	if code != cli.ExitNoMatch {
+		t.Errorf("exit = %d, want %d", code, cli.ExitNoMatch)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+}

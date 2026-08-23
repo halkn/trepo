@@ -62,8 +62,12 @@ func (a *app) get(args []string) int {
 func (a *app) list(args []string) int {
 	flags, query, code, ok := a.parse(args, spec{
 		"json": false, "repos": false, "worktrees": false, "here": false,
+		"cwd": true,
 	})
 	if !ok {
+		return code
+	}
+	if code := a.standIn(flags); code != ExitOK {
 		return code
 	}
 	asJSON := flags["json"] == "true"
@@ -101,8 +105,13 @@ func (a *app) list(args []string) int {
 
 // path answers with one location and nothing else.
 func (a *app) path(args []string) int {
-	flags, query, code, ok := a.parse(args, spec{"repos": false, "here": false})
+	flags, query, code, ok := a.parse(args, spec{
+		"repos": false, "here": false, "current": false, "cwd": true,
+	})
 	if !ok {
+		return code
+	}
+	if code := a.standIn(flags); code != ExitOK {
 		return code
 	}
 
@@ -114,6 +123,7 @@ func (a *app) path(args []string) int {
 	if code != ExitOK {
 		return code
 	}
+	cs = current(cs, flags, a.opts.Cwd)
 	if flags["repos"] == "true" {
 		var kept []checkout.Checkout
 		for _, c := range cs {
@@ -303,9 +313,12 @@ func (a *app) status(args []string) int {
 	if err != nil {
 		return fail(a.stderr, err)
 	}
-	c, ok := checkout.Locate(cs, path)
+	// Any directory below a checkout, not only a path trepo printed: a preview
+	// renders whatever the caller is looking at, which is a pane's working
+	// directory as often as it is a row taken from the listing.
+	c, ok := checkout.Containing(cs, path)
 	if !ok {
-		return fail(a.stderr, fmt.Errorf("%s is not a checkout of %s", path, target.Slug()))
+		return fail(a.stderr, fmt.Errorf("%s is not inside a checkout of %s", path, target.Slug()))
 	}
 
 	fmt.Fprintf(a.stdout, "%s\n", c.Repo.Slug())

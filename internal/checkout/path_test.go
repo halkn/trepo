@@ -49,6 +49,59 @@ func TestUnderResolvesSymlinks(t *testing.T) {
 	}
 }
 
+func TestContaining(t *testing.T) {
+	repo := checkout.Checkout{Path: "/repos/app", Kind: checkout.KindRepo}
+	inner := checkout.Checkout{Path: "/repos/app/wt", Kind: checkout.KindWorktree}
+	other := checkout.Checkout{Path: "/wt/app/feat", Kind: checkout.KindWorktree}
+	all := []checkout.Checkout{repo, inner, other}
+
+	tests := []struct {
+		name string
+		dir  string
+		want string
+	}{
+		{"a directory below a checkout", "/repos/app/internal/cli", "/repos/app"},
+		{"the checkout itself", "/wt/app/feat", "/wt/app/feat"},
+		{"a sibling sharing a prefix", "/repos/app2/x", ""},
+		{"outside every checkout", "/elsewhere", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := checkout.Containing(all, tt.dir)
+			if !ok {
+				if tt.want != "" {
+					t.Fatalf("Containing(%q) found nothing, want %q", tt.dir, tt.want)
+				}
+				return
+			}
+			if tt.want == "" {
+				t.Fatalf("Containing(%q) = %q, want nothing", tt.dir, got.Path)
+			}
+			if got.Path != tt.want {
+				t.Errorf("Containing(%q) = %q, want %q", tt.dir, got.Path, tt.want)
+			}
+		})
+	}
+}
+
+// A worktree created inside its own repository puts a directory under two
+// checkouts at once. Nesting has already decided which one the user means, so
+// reporting it as undecided would call open a question git answers itself.
+func TestContainingTakesTheInnermost(t *testing.T) {
+	all := []checkout.Checkout{
+		{Path: "/repos/app", Kind: checkout.KindRepo},
+		{Path: "/repos/app/wt", Kind: checkout.KindWorktree},
+	}
+
+	got, ok := checkout.Containing(all, "/repos/app/wt/internal")
+	if !ok {
+		t.Fatal("Containing() found nothing")
+	}
+	if got.Path != "/repos/app/wt" {
+		t.Errorf("Containing() = %q, want the innermost checkout", got.Path)
+	}
+}
+
 func TestIsProtected(t *testing.T) {
 	tests := []struct {
 		name     string

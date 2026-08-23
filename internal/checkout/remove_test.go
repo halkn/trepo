@@ -197,9 +197,11 @@ func TestRemoveDryRunChangesNothing(t *testing.T) {
 	}
 }
 
-// A caller hands trepo a path, and the repository it belongs to has to be found
-// from that alone — including when the directory no longer exists.
-func TestLocate(t *testing.T) {
+// A caller hands trepo a path, and the checkout it belongs to has to be found
+// from that alone — including when the directory no longer exists, which is
+// exactly the case worth reclaiming. Asking git about the path cannot answer
+// it: `git -C <gone>` fails before it can report anything.
+func TestContainingFindsACheckoutWhoseDirectoryIsGone(t *testing.T) {
 	fixture := gittest.New(t)
 	wtPath := filepath.Join(filepath.Dir(fixture.Dir), "wt-gone")
 	fixture.Git("worktree", "add", "-b", "gone", wtPath)
@@ -208,14 +210,14 @@ func TestLocate(t *testing.T) {
 	}
 	all := list(t, fixture)
 
-	got, ok := checkout.Locate(all, wtPath)
+	got, ok := checkout.Containing(all, wtPath)
 	if !ok {
-		t.Fatalf("Locate() did not find %q among %v", wtPath, all)
+		t.Fatalf("Containing() did not find %q among %v", wtPath, all)
 	}
 	if !checkout.SamePath(got.Path, wtPath) {
-		t.Errorf("Locate() = %q, want %q", got.Path, wtPath)
+		t.Errorf("Containing() = %q, want %q", got.Path, wtPath)
 	}
-	if _, ok := checkout.Locate(all, filepath.Join(t.TempDir(), "nowhere")); ok {
-		t.Error("Locate() matched a path that is not a checkout")
+	if _, ok := checkout.Containing(all, filepath.Join(t.TempDir(), "nowhere")); ok {
+		t.Error("Containing() matched a path that is not inside a checkout")
 	}
 }
