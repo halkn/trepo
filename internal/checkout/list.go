@@ -122,20 +122,55 @@ func (l Lister) branchFlags(dir, branch string, base Base) []Flag {
 // treats a missing origin/HEAD as a fatal error, and the message would end up
 // parsed as if it were a ref name.
 func ResolveBase(r git.Runner, dir string) Base {
-	if out, err := git.Output(r, dir, "symbolic-ref", "--quiet", "--short",
-		"refs/remotes/origin/HEAD"); err == nil && out != "" {
-		return Base{Name: out, Known: true}
+	// One process for every candidate rather than one per candidate. Listing
+	// spends its time starting git rather than running it, and this ran for
+	// each repository enumerated. for-each-ref takes several patterns, leaves
+	// the missing ones out of its output and still succeeds, so the whole
+	// question fits in a single command.
+	args := append([]string{"for-each-ref", "--format=%(refname)%09%(symref:short)"},
+		baseCandidates...)
+	out, err := git.Output(r, dir, args...)
+	if err != nil {
+		return Base{}
 	}
-	for _, candidate := range []string{
-		"refs/remotes/origin/main", "refs/remotes/origin/master",
-		"refs/heads/main", "refs/heads/master",
-	} {
-		if git.OK(r, dir, "rev-parse", "--verify", "--quiet", candidate) {
+
+	found := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		name, target, _ := strings.Cut(line, "\t")
+		found[name] = target
+	}
+
+	// git sorts its answer by refname, so precedence is applied here: the
+	// remote's own idea of the default branch first, then the conventional
+	// names, remote before local.
+	//
+	// origin/HEAD counts only while it is symbolic. A plain ref of that name
+	// says which commit the remote's HEAD was at, not which branch trepo should
+	// compare against, and naming it as the base would report merged work
+	// against a moving target.
+	if target := found[originHead]; target != "" {
+		return Base{Name: target, Known: true}
+	}
+	for _, candidate := range baseCandidates[1:] {
+		if _, ok := found[candidate]; ok {
 			return Base{Name: strings.TrimPrefix(
 				strings.TrimPrefix(candidate, "refs/remotes/"), "refs/heads/"), Known: true}
 		}
 	}
 	return Base{}
+}
+
+const originHead = "refs/remotes/origin/HEAD"
+
+// baseCandidates is in precedence order, which is also the order they are
+// handed to git. origin/HEAD leads it and is the one that has to be symbolic.
+var baseCandidates = []string{
+	originHead,
+	"refs/remotes/origin/main", "refs/remotes/origin/master",
+	"refs/heads/main", "refs/heads/master",
 }
 
 func dirExists(path string) bool {

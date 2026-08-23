@@ -138,6 +138,16 @@ the vocabulary they read. It also cannot be derived from the rest, which is why
 it is printed rather than left implicit: a branch named `fix/main-nav` must not
 be mistaken for the main checkout by a caller matching on text.
 
+**Flags are computed eagerly, and that stays affordable by counting git
+processes rather than by computing less.** Enumeration spends its time starting
+git, not running it — the work each command does is small next to the cost of
+launching it — so the number that matters is processes per repository, not what
+any one of them asks for. A condition that needs a process per checkout is the
+expensive kind; one that can be answered for a whole repository at once is not.
+This is what keeps a lazy mode unnecessary, and a lazy mode is worth avoiding:
+it would make "no flags" and "flags not computed yet" two readings of the same
+empty column, and the removal guards read that column.
+
 **Columns are values, not a rendering.** Widths belong to whatever draws the
 row, since that is what knows the terminal and the font. A width fixed here is
 stripped again by every caller that splits on tabs, and is overrun by the first

@@ -59,10 +59,9 @@ func (f Finder) All(repos []repo.Repo) ([]Checkout, []error) {
 	return result, errs
 }
 
-// Repo lists the checkouts of one repository, reading the settings that
-// repository is allowed to decide for itself.
+// Repo lists the checkouts of one repository, reading the one setting that
+// repository is allowed to decide for itself and that listing depends on.
 func (f Finder) Repo(r repo.Repo) ([]Checkout, error) {
-	rc := config.LoadRepo(f.Git, r.Root)
-	l := Lister{Git: f.Git, Cwd: f.Cwd, Protected: rc.Protected}
+	l := Lister{Git: f.Git, Cwd: f.Cwd, Protected: config.Protected(f.Git, r.Root)}
 	return l.Repo(r)
 }

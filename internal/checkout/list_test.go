@@ -287,3 +287,28 @@ func TestListFlagsMergedForADetachedCheckout(t *testing.T) {
 			find(t, got, ahead).Flags)
 	}
 }
+
+// Enumeration spends its time starting git, not running it: at 60 repositories
+// the listing issues hundreds of processes and each one costs more than the
+// work it does. Resolving the base was four of them per repository, asking
+// after one candidate ref at a time, and git answers for every candidate at
+// once.
+func TestResolveBaseAsksGitOnce(t *testing.T) {
+	fake := &git.Fake{Responses: map[string]git.Response{}}
+	fake.Responses["for-each-ref --format=%(refname)%09%(symref:short) "+
+		"refs/remotes/origin/HEAD refs/remotes/origin/main refs/remotes/origin/master "+
+		"refs/heads/main refs/heads/master"] = git.Response{
+		Stdout: "refs/heads/main\t\nrefs/remotes/origin/HEAD\torigin/main\n",
+	}
+
+	got := checkout.ResolveBase(fake, "/repo")
+	if !got.Known || got.Name != "origin/main" {
+		t.Errorf("ResolveBase() = %+v, want origin/main", got)
+	}
+	if len(fake.Calls) != 1 {
+		t.Errorf("ResolveBase() ran %d git commands, want 1:", len(fake.Calls))
+		for _, c := range fake.Calls {
+			t.Errorf("  %v", c.Args)
+		}
+	}
+}
