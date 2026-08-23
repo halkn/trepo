@@ -63,6 +63,7 @@ usage:
   trepo add <branch>                   create a worktree and print its path
   trepo rm [<query>...]                remove worktrees, or reclaim finished ones
   trepo status <path>                  describe one checkout
+  trepo remote [<query>...]            list repositories that could be cloned
   trepo version                        print which build this is
 
 options:
@@ -70,6 +71,7 @@ options:
   path   --repos --here --current --cwd <dir>
   add    --repo <query> --from <ref>
   rm     --force --dry-run --here --reclaimable
+  remote --missing --refresh
 
 --here narrows to the repository the working directory belongs to, whichever
 of its checkouts you are standing in; --current narrows to that one checkout.
@@ -80,6 +82,12 @@ directory is what marks the checkout rm refuses to remove.
 No command asks a question. rm keeps whatever would need one and says why;
 --force removes it anyway. --reclaimable takes the worktrees whose work is
 done — merged, retired on the remote, or already deleted by hand.
+
+remote is the only command that reaches the network, and it does so through
+gh. Its columns are host, repository, local or remote, and the path when the
+repository is already here; hand one to "trepo get" to clone it. Owners are
+read from trepo.remoteOwner, defaulting to the authenticated account. When it
+fails, every other command still works.
 
 Exit status: 0 success, 1 nothing matched, 2 an error, 3 nothing was decided —
 several checkouts matched one query, or every removal was kept. Build a picker
@@ -129,6 +137,8 @@ func Run(args []string, stdout, stderr io.Writer, opts Options) int {
 		return a.remove(rest)
 	case "status":
 		return a.status(rest)
+	case "remote":
+		return a.remoteCandidates(rest)
 	default:
 		fmt.Fprintf(stderr, "trepo: unknown command %q\n\n%s\n", name, usage)
 		return ExitError

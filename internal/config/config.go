@@ -29,6 +29,11 @@ type Config struct {
 	Root         string
 	WorktreeRoot string
 	DefaultHost  string
+
+	// RemoteOwners are the accounts and organisations acquisition asks after.
+	// Empty means the authenticated account alone, which is what a provider
+	// answers when told no owner.
+	RemoteOwners []string
 }
 
 // RepoConfig holds the settings a repository may reasonably decide for itself.
@@ -66,6 +71,7 @@ func Load(r git.Runner) (Config, error) {
 			key.set(v)
 		}
 	}
+	cfg.RemoteOwners = universeAll(r, "trepo.remoteOwner")
 	return cfg, nil
 }
 
@@ -114,6 +120,20 @@ func universe(r git.Runner, key string) (string, bool, error) {
 		}
 	}
 	return "", false, nil
+}
+
+// universeAll is universe for a key that may be repeated. The first scope that
+// says anything wins outright rather than being merged with the next: a global
+// list that replaces the system one can be read off the file it is written in,
+// where a merged list could only be explained by running trepo.
+func universeAll(r git.Runner, key string) []string {
+	for _, scope := range []string{"--global", "--system"} {
+		out, err := git.Output(r, "", "config", scope, "--get-all", key)
+		if err == nil && out != "" {
+			return strings.Split(out, "\n")
+		}
+	}
+	return nil
 }
 
 func scoped(r git.Runner, dir, key string) (string, bool, error) {

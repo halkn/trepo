@@ -15,8 +15,9 @@ start by deciding whether that place is a clone or a worktree.
 go install github.com/halkn/trepo/cmd/trepo@latest
 ```
 
-Requires git 2.36 or newer, and nothing else. trepo runs no picker and asks no
-question; see [Choosing between checkouts](#choosing-between-checkouts).
+Requires git 2.36 or newer. `trepo remote` additionally needs `gh`; no other
+command reaches the network. trepo runs no picker and asks no question; see
+[Choosing between checkouts](#choosing-between-checkouts).
 
 ## Commands
 
@@ -27,6 +28,7 @@ trepo path [<query>...]              print the path of one checkout
 trepo add <branch>                   create a worktree and print its path
 trepo rm [<query>...]                remove worktrees, or reclaim finished ones
 trepo status <path>                  describe one checkout
+trepo remote [<query>...]            list repositories that could be cloned
 trepo version                        print which build this is
 ```
 
@@ -135,6 +137,7 @@ Settings live in git config, under `trepo.*`.
 | `trepo.defaultHost` | `github.com` | global and system only |
 | `trepo.worktreeTemplate` | `{{.Owner}}/{{.Repo}}/{{.Branch}}` | any scope |
 | `trepo.protected` | none | any scope, repeatable |
+| `trepo.remoteOwner` | the authenticated account | global and system only, repeatable |
 
 The three keys that decide which checkouts exist at all are read from the
 global and system scopes only, so that `trepo list` answers the same in every
@@ -193,6 +196,41 @@ gh attestation verify trepo_v0.2.0_darwin_arm64.tar.gz --repo halkn/trepo
 Versions are not written down in the source: `trepo version` reports what Go
 stamped from the tag, so a build that is not made from a tagged, clean checkout
 says so rather than claiming a release number.
+
+## Acquiring repositories
+
+`trepo remote` lists what could be cloned and marks what is already here. It is
+the only command that reaches the network, and it does so through `gh`, which
+already holds the token and knows the endpoint of an enterprise host:
+
+```sh
+$ trepo remote | column -t -s $'\t'
+github.com  halkn/api      local   ~/repos/github.com/halkn/api
+github.com  halkn/trepo    local   ~/repos/github.com/halkn/trepo
+github.com  halkn/scratch  remote  -
+
+$ trepo remote --missing            # only what is not here yet
+$ p=$(trepo get halkn/scratch) && cd -- "$p"
+```
+
+One repository is one row however its URL is spelled: SSH and HTTPS, with or
+without `.git`, fold onto the location it would occupy under the trepo root.
+
+Answers are cached for an hour under `${XDG_CACHE_HOME:-~/.cache}/trepo`, so a
+picker built on this stays responsive; `--refresh` asks again. The cache is
+never consulted to decide what is on disk — that is always read from the
+filesystem — so deleting it costs one network call and changes no answer.
+
+When `gh` is missing, unauthenticated or offline, `trepo remote` says so and
+exits `2` rather than reporting an empty account. Every other command keeps
+working: a broken token stops acquisition, not the ability to reach a checkout.
+
+By default the list is the authenticated account's own repositories. Add
+organisations with `trepo.remoteOwner`:
+
+```sh
+git config --global --add trepo.remoteOwner some-org
+```
 
 ## Removing worktrees
 
