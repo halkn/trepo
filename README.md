@@ -15,8 +15,9 @@ start by deciding whether that place is a clone or a worktree.
 go install github.com/halkn/trepo/cmd/trepo@latest
 ```
 
-Requires git 2.36 or newer. `fzf` is optional: it is used for choosing between
-several candidates, and everything else works without it.
+Requires git 2.36 or newer, and nothing else. trepo runs no picker and asks no
+question, so choosing between candidates is a wrapper's job — build one over
+`trepo list`, with `trepo status <path>` as its preview.
 
 ## Commands
 
@@ -38,12 +39,20 @@ p=$(trepo path api) && cd -- "$p"
 p=$(trepo add feat/login --repo api) && cd -- "$p"
 ```
 
-Use two commands rather than `cd -- "$(trepo path api)"`: when a selection is
-cancelled stdout is empty, and `cd` with no argument goes home in bash and
-fails in zsh.
+Use two commands rather than `cd -- "$(trepo path api)"`: when nothing is
+resolved stdout is empty, and `cd` with no argument goes home in bash and fails
+in zsh.
 
-`list` never asks a question and exits 0 even with no results, which makes it
+`list` never fails on emptiness and exits 0 with no results, which makes it
 usable as a data source; `--json` prints a single array.
+
+`path` answers with one checkout or with nothing. A query that matches several
+exits `3` and says how many, rather than picking one:
+
+```sh
+$ trepo path alp
+trepo: 2 checkouts match alp; narrow the query or choose one from trepo list
+```
 
 `list`, `path` and `rm` take `--here`, which narrows to the repository the
 working directory belongs to — standing in one of its worktrees counts, since
@@ -56,9 +65,25 @@ p=$(trepo path --here) && cd -- "$p"      # back to the repository's own checkou
 trepo rm --here feat/login                # its worktrees only
 ```
 
-Exit statuses: `0` success, `1` nothing matched, `2` an error, `130` nothing
-was chosen — the picker was dismissed, or every removal `rm` offered was
-declined or kept.
+Exit statuses: `0` success, `1` nothing matched, `2` an error, `3` nothing was
+decided — several checkouts matched one query, or `rm` kept every target. `130`
+is left free for the caller, since that is what `fzf` exits with when a picker
+is dismissed.
+
+## Choosing between checkouts
+
+trepo resolves; a wrapper chooses. `list` prints one tab-separated row per
+checkout — repository, branch, flags, path — and `status <path>` describes one,
+which is what a preview window renders:
+
+```sh
+cdw() {
+  local row
+  row=$(trepo list | fzf --delimiter=$'\t' --with-nth=1,2,3 \
+        --preview='trepo status {4}') || return $?   # 130 when dismissed
+  cd -- "${row##*$'\t'}"
+}
+```
 
 ## Layout
 
@@ -149,43 +174,38 @@ says so rather than claiming a release number.
 
 ## Removing worktrees
 
-`trepo rm` refuses outright to remove the main checkout, the checkout you are
-standing in, and a locked worktree. It asks first when a worktree has
-uncommitted changes, has ignored files such as a `.env`, has commits the base
-branch does not already contain, or is protected. A detached worktree counts:
-with no branch pointing at them, its commits become unreachable once it is
-gone.
+`trepo rm` takes one worktree, named by a query that matches exactly one —
+a full path from a picker being the reliable spelling. It refuses outright to
+remove the main checkout, the checkout you are standing in, and a locked
+worktree.
 
-`--force` skips the asking. `--no-confirm` does the opposite: it removes what
-needs no question and keeps the rest, naming each kept checkout and its reason
-on stderr. It is for callers with no way to answer — a shell script, or a key
-binding inside `fzf`, where stdin belongs to something else. The two contradict
-each other and cannot be passed together.
+It also holds back, rather than asking, when a worktree has uncommitted
+changes, has ignored files such as a `.env`, has commits the base branch does
+not already contain, or is protected. A detached worktree counts: with no
+branch pointing at them, its commits become unreachable once it is gone. The
+kept checkout and its reason go to stderr, and the run exits `3`:
 
 ```sh
-trepo rm --no-confirm "$path"   # 0 something was removed, 130 nothing was
+$ trepo rm feat/login
+trepo: skipped ~/worktrees/halkn/api/feat/login: it has uncommitted changes; rerun with --force to remove it anyway
 ```
 
-The status reports whether anything was removed, so a run that removes one
-checkout and keeps another still exits `0`; which ones were kept is on stderr.
-`--no-confirm` also silences the confirmation, not the choice of target:
-several matches still open the picker. For both reasons a caller that cannot
-answer should pass a query that can only match one checkout, such as a full
-path.
+`--force` is how the caller makes that decision. There is no flag to suppress
+the question, because nothing asks: the behaviour is the same in a terminal, in
+a script and inside an `fzf` key binding, where stdin belongs to something else.
 
 `--dry-run` runs the guards and reports what would happen without removing
-anything or asking anything, so a refusal shows up as a refusal rather than as
-a removal that would have gone ahead. Asking nothing means it can only rehearse
-the removals that need no answer: it reports the rest as kept, and ends on the
-same status an unattended run would.
+anything, so a refusal shows up as a refusal rather than as a removal that
+would have gone ahead. It ends on the status the real run would.
 
 A merged branch is deleted along with its worktree, with `git branch -d` only,
 so a branch git refuses to delete stays.
 
 ## Reclaiming finished worktrees
 
-`trepo rm --reclaimable` takes the worktrees whose job is done, without a
-picker and without a question:
+`trepo rm --reclaimable` is the one form that acts on several at once: the flag
+is the selection, so it takes every worktree whose job is done rather than
+asking the query to name one.
 
 ```sh
 trepo rm --reclaimable            # everywhere
