@@ -194,6 +194,19 @@ from the enumeration rather than from `git -C <path>`: a worktree whose
 directory is gone cannot answer for itself, and that is precisely the case
 worth reclaiming.
 
+**Acquisition caches, and that does not contradict any of it.** What a provider
+reports is not trepo's state: it describes an account somewhere else, it is
+reconstructible by asking again, and nothing reads it to decide what exists
+here. Whether a repository is already local is still answered by the
+filesystem, on every run, by the same enumeration everything else uses. Deleting
+the whole cache costs one network call and changes no answer — which is the
+test for whether something may be cached at all.
+
+That is also why it may go stale without harm, and why it lives in the cache
+directory rather than beside the data a worktree's uncommitted work would need.
+An entry too old to trust is discarded rather than served, because the list
+exists to find a repository made moments ago.
+
 The same rule constrains anything else worth remembering about a checkout, such
 as the fact that it came from a review: whatever holds it has to survive the
 directory being moved and the branch being renamed, which rules out a side file

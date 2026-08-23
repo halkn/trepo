@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1175,5 +1176,47 @@ func TestHereInsideTheRootButOutsideTheLayoutSaysSo(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "--here") {
 		t.Errorf("stderr %q does not explain the refusal", stderr)
+	}
+}
+
+// Acquisition needs the network and a token; nothing else does. A failure there
+// has to leave the ability to reach a checkout alone, which is why it is its own
+// command rather than a flag on list.
+func TestRemoteFailingLeavesEveryOtherCommandWorking(t *testing.T) {
+	w := newWorld(t)
+	dir := w.addRepo("github.com", "halkn", "alpha")
+	// A PATH with git on it but no gh, which is what a machine without gh
+	// installed looks like.
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not on PATH")
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	code, stdout, stderr := w.run("remote")
+	if code != cli.ExitError {
+		t.Errorf("exit = %d, want %d", code, cli.ExitError)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty rather than an empty list", stdout)
+	}
+	if !strings.Contains(stderr, "gh") {
+		t.Errorf("stderr %q does not name what is missing", stderr)
+	}
+	if countLines(stderr) != 1 {
+		t.Errorf("stderr has %d lines, want one:\n%s", countLines(stderr), stderr)
+	}
+
+	code, stdout, _ = w.run("path", "alpha")
+	if code != cli.ExitOK {
+		t.Errorf("path exit = %d, want %d with gh missing", code, cli.ExitOK)
+	}
+	if got := strings.TrimSpace(stdout); !checkout.SamePath(got, dir) {
+		t.Errorf("path = %q, want %q", got, dir)
 	}
 }
